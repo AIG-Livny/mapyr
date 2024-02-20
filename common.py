@@ -1,7 +1,11 @@
+import sys
 import os
+import imp
+import itertools
 import subprocess
 import concurrent.futures
 
+#----------------------EXCEPTIONS----------------------
 class Exceptions:
     class CustomException(Exception):
         def __init__(self): super().__init__(self.__doc__)
@@ -10,7 +14,9 @@ class Exceptions:
         "Circular dependency detected!"
     class OutFileEmpty(CustomException):
         "Variable: OUT_FILE empty!"
+#----------------------END EXCEPTIONS------------------
 
+#----------------------UTILS---------------------------
 def find_files_recursive(dirs:list[str], exts:list[str]) -> list[str]:
     result = []
     for dir in dirs:
@@ -30,18 +36,22 @@ def find_files(dirs:list[str], exts:list[str]) -> list[str]:
                 if os.path.splitext(file)[1] in exts:
                     result.append(os.path.abspath(filepath))
     return result
+#----------------------END UTILS-----------------------
 
+#----------------------TARGET--------------------------
 class Target:
-    def __init__(self, path:str, preqs : set[str]) -> None:
+    def __init__(self, path:str, preqs : set[str], parent:"Project") -> None:
         self.path : str =  os.path.abspath(path)
         self.prerequisites : set[str] = {os.path.abspath(p) for p in preqs}
+        self.parent  : Project = parent
     
     def __repr__(self) -> str:
         return f'{self.path}:{self.prerequisites}'
 
 class TargetManager:
-    def __init__(self) -> None:
+    def __init__(self, parent:"Project") -> None:
         self.targets : list[Target] = []
+        self.parent  : Project = parent
 
     def add(self, t:Target):
         found = self.find(t.path)
@@ -85,7 +95,7 @@ class TargetManager:
                 if prq != '':
                     preq.add(os.path.abspath(prq))
             
-            self.add(Target(path,preq))
+            self.add(Target(path,preq,self.parent))
 
 
     def need_build(self, path) -> bool:
@@ -125,7 +135,7 @@ class TargetManager:
         '''
         local_targets : list[Target] = []
         for target in self.targets:
-            local_targets.append(Target(target.path,target.prerequisites.copy()))
+            local_targets.append(Target(target.path,target.prerequisites.copy(),self.parent))
         
         def remove_local_prereqs(t:Target):
             for target in local_targets:
@@ -177,10 +187,11 @@ class TargetManager:
             result.append(layer)
             layer = get_lower_nodes()
         return result
+#----------------------END TARGET----------------------
 
-class Project:
+#----------------------PROJECT--------------------------
+class ProjectConfig:
     def __init__(self) -> None:
-        self.target_man = TargetManager()
         self.OUT_FILE               : str = ""
         self.COMPILER               : str = "clang"
         self.OBJ_PATH               : str = "obj"
@@ -200,9 +211,93 @@ class Project:
         self.INCLUDE_FLAGS          : set[str] = set()
         self.LIB_DIRS_FLAGS         : set[str] = set()
         self.LIBS_FLAGS             : set[str] = set()
+        self.PKG_SEARCH             : set[str] = set()
 
-        self.MAX_THREADS_NUM        : int = 1
+        self.MAX_THREADS_NUM        : int = 10
 
+class Project:
+    def __init__(self, config:ProjectConfig) -> None:
+        self.target_man = TargetManager(self)
+        self.config = config
+        self.subprojects : list[Project] = []
+        self.cwd : str = os.getcwd()
+
+        self.reload_subprojects()
+        self.prepare()
+
+    def prepare(self):
+        if not self.config.OUT_FILE:
+            raise Exceptions.OutFileEmpty()
+
+        # default sources targets 
+        sources = set(find_files(self.config.SRC_DIRS, self.config.SRC_EXTS))
+        objects = []
+        deps = []
+        for src in sources:
+            path = self.config.OBJ_PATH + "/" + os.path.relpath(src).replace('../','updir/')
+            spl = os.path.splitext(path)
+            obj = f"{spl[0]}.o"
+            dep = f"{spl[0]}.d"
+            objects.append(obj)
+            deps.append(dep)
+            self.target_man.add(Target(obj,{src},self))
+
+        # default out file target
+        self.target_man.add(Target(self.config.OUT_FILE,set(objects),self))
+
+        # load targets from .d files if they present
+        for d in deps:
+            self.target_man.get_from_d_file(d)
+
+        # prepare flags
+        self.config.INCLUDE_FLAGS     = {f"-I{x}" for x in self.config.INCLUDE_DIRS}
+        self.config.LIB_DIRS_FLAGS    = {f"-L{x}" for x in self.config.LIB_DIRS}
+        self.config.LIBS_FLAGS        = {f"-l{x}" for x in self.config.LIBS}
+
+    def reload_subprojects(self):
+        self.subprojects = []
+        self.config.SUBPROJECTS.update(self.config.SUBPROJECTS_LIBS)
+        
+        for sp in self.config.SUBPROJECTS:
+            sp_abs = os.path.abspath(sp)
+            self.tmp_config = None
+            try:
+                with open(sp_abs+"/"+"Mapyrfile") as f:
+                    exec(f.read()+'\nself.tmp_config = config()',None,{'self':self})
+                if self.tmp_config is None:
+                    RuntimeError('config load failed!')
+                
+                orig_dir = os.getcwd()
+                os.chdir(sp_abs)
+                np = Project(self.tmp_config)
+                os.chdir(orig_dir)
+                self.subprojects.append(np)
+            
+            except Exception as e:
+                print(color_text(31,f"Subproject {sp}: {e}"))
+                continue
+
+            
+    def get_build_layers(self) -> list[list[str]]:        
+        result = self.target_man.get_build_layers()
+
+        # subprojects
+        
+        for prj in self.subprojects:
+            orig_dir = os.getcwd()
+            os.chdir(prj.cwd)
+            sbl = prj.get_build_layers()
+            os.chdir(orig_dir)
+            
+            newlayers = []
+            for i in itertools.zip_longest(result,sbl,fillvalue=[]):
+                newlayers.append(i[0]+i[1])
+            result = newlayers
+
+        return result
+#----------------------END PROJECT---------------------
+    
+#----------------------BUILD PROCESS-------------------
 # Color text Win/Lin
 if os.name == 'nt':
     def color_text(color,text):
@@ -220,9 +315,9 @@ def build_c(source:str, obj:str, p:Project) -> int:
     os.makedirs(os.path.dirname(obj),exist_ok=True)
     basename = os.path.splitext(obj)[0]
     depflags = ['-MT',obj,'-MMD','-MP','-MF',f"{basename}.d"]
-    cmd = [p.COMPILER]+depflags
-    cmd += list(p.CFLAGS)
-    cmd += list(p.INCLUDE_FLAGS) +['-c','-o',obj,source]
+    cmd = [p.config.COMPILER]+depflags
+    cmd += list(p.config.CFLAGS)
+    cmd += list(p.config.INCLUDE_FLAGS) +['-c','-o',obj,source]
     return sh(cmd)
 
 def get_size(path:str) -> int:
@@ -255,61 +350,36 @@ def link(cmd:list[str], out:str):
 
 def link_exe(out:str, objects:set[str], p:Project) -> int:
     print(f"{color_text(32,'Linking executable')}: {os.path.relpath(out)}")
-    cmd = [p.COMPILER]+list(p.LIB_DIRS_FLAGS)+list(objects)+['-o',out]+list(p.LIBS)
+    cmd = [p.config.COMPILER]+list(p.config.LIB_DIRS_FLAGS)+list(objects)+['-o',out]+list(p.config.LIBS)
     return link(cmd,out)
 
-def build_target(t:Target, p:Project) -> int:
+def build_target(t:Target) -> int:
     for prq in t.prerequisites:
         match(os.path.splitext(prq)[1]):
-            case '.c': return build_c(prq, t.path, p)
+            case '.c': return build_c(prq, t.path, t.parent)
     
-    target = p.target_man.find(t.path)
+    target = t.parent.target_man.find(t.path)
     match(os.path.splitext(target.path)[1]):
-        case '' | '.exe': return link_exe(target.path,target.prerequisites,p)
+        case '' | '.exe': return link_exe(target.path,target.prerequisites,t.parent)
 
     print(f"{color_text(91,'Not found builder for')}: {os.path.relpath(t.path)}")
     return 1
+#----------------------END BUILD PROCESS---------------
 
-def process(p:Project):
-    if not p.OUT_FILE:
-        raise Exceptions.OutFileEmpty()
-
-    # default sources targets 
-    sources = set(find_files(p.SRC_DIRS, p.SRC_EXTS))
-    objects = []
-    deps = []
-    for src in sources:
-        path = p.OBJ_PATH + "/" + os.path.relpath(src).replace('../','updir/')
-        spl = os.path.splitext(path)
-        obj = f"{spl[0]}.o"
-        dep = f"{spl[0]}.d"
-        objects.append(obj)
-        deps.append(dep)
-        p.target_man.add(Target(obj,{src}))
-
-    # default out file target
-    p.target_man.add(Target(p.OUT_FILE,set(objects)))
-
-    # load targets from .d files if they present
-    for d in deps:
-        p.target_man.get_from_d_file(d)
-
-    layers = p.target_man.get_build_layers()
+#
+def build(p:Project):
+    layers = p.get_build_layers()
+    
     if not layers:
         print('Nothing to build')
         return
     
-    # prepare flags
-    p.INCLUDE_FLAGS     = {f"-I{x}" for x in p.INCLUDE_DIRS}
-    p.LIB_DIRS_FLAGS    = {f"-L{x}" for x in p.LIB_DIRS}
-    p.LIBS_FLAGS        = {f"-l{x}" for x in p.LIBS}
-
     for layer in layers:
         layer : list[Target]
 
         error = False
-        with concurrent.futures.ProcessPoolExecutor(max_workers=p.MAX_THREADS_NUM) as executor:
-            builders = [executor.submit(build_target,t,p) for t in layer]
+        with concurrent.futures.ProcessPoolExecutor(max_workers=p.config.MAX_THREADS_NUM) as executor:
+            builders = [executor.submit(build_target,t) for t in layer]
             for builder in builders:
                 if builder.result() != 0:
                     error = True
@@ -318,23 +388,11 @@ def process(p:Project):
                 break
     if not error:
         print(color_text(32,'Done'))
+    else:
+        print(color_text(91,'Error. Stopped.'))
 
-if __name__== "__main__":
-    p = Project()
-    p.OUT_FILE = "test"
-    process(p)
-    #p = Project()
-    #p.target_man.add(Target("bin/test",{"lib/lib1.a","lib/lib2.a","obj/main.o","obj/second.o"}))
-    #p.target_man.add(Target("obj/main.o",{"src/main.c","include/inc1.h","include/inc2.h"}))
-    #p.target_man.add(Target("obj/second.o",{"src/second.c","include/inc1.h","include/inc2.h"}))
-    #p.target_man.add(Target("include/inc1.h",{}))
-    #p.target_man.add(Target("include/inc2.h",{}))
-    #p.target_man.add(Target("lib/lib1.a",{"lib/src1.o"}))
-    #p.target_man.add(Target("lib/src1.o",{"lib/src1.c"}))
-    #p.target_man.add(Target("lib/lib2.a",{"lib/src2.o"}))
-    #p.target_man.add(Target("lib/src2.o",{"lib/src2.c"}))
-
-    #p.target_man.add(Target(re.compile(".*\.c$"),{}))
-    #gg = p.target_man.check_prerequisites_have_targets()
-    #targ = p.target_man.get_build_layers()
-    #pass
+def process(pc:ProjectConfig, argv : list[str]):
+    argv.append('bUilD')
+    for arg in argv:
+        match(arg.lower()):
+            case 'build':   build(Project(pc))
