@@ -2,6 +2,7 @@ import sys
 import os
 import imp
 import itertools
+import shutil
 import subprocess
 import concurrent.futures
 
@@ -20,6 +21,8 @@ class Exceptions:
 def find_files_recursive(dirs:list[str], exts:list[str]) -> list[str]:
     result = []
     for dir in dirs:
+        if not os.path.exists(dir):
+            continue
         for folder, _, files in os.walk(dir):
             for file in files:
                 filepath = f"{folder}/{file}"
@@ -30,12 +33,34 @@ def find_files_recursive(dirs:list[str], exts:list[str]) -> list[str]:
 def find_files(dirs:list[str], exts:list[str]) -> list[str]:
     result = []
     for dir in dirs:
+        if not os.path.exists(dir):
+            continue
         for file in os.listdir(dir):
             filepath = f'{dir}/{file}'
             if os.path.isfile(filepath):
                 if os.path.splitext(file)[1] in exts:
                     result.append(os.path.abspath(filepath))
     return result
+
+def sh(cmd: list[str]) -> int:
+    return subprocess.Popen(cmd).wait()
+
+def sh_capture(cmd: list[str]) -> str:
+    run = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout,stderr = run.communicate()
+    run.wait()
+    if len(stderr) > 0:
+        return stderr.decode()
+    return stdout.decode()
+
+import os, errno
+
+def silentremove(filename):
+    try:
+        os.remove(filename)
+    except FileNotFoundError:
+        pass
+    
 #----------------------END UTILS-----------------------
 
 #----------------------TARGET--------------------------
@@ -56,8 +81,8 @@ class TargetManager:
     def add(self, t:Target):
         found = self.find(t.path)
         if found is not None:
-            found.prerequisites = t.prerequisites
-            #found.prerequisites.update(t.prerequisites)
+            #found.prerequisites = t.prerequisites
+            found.prerequisites.update(t.prerequisites)
         else:
             self.targets.append(t)
 
@@ -97,96 +122,66 @@ class TargetManager:
             
             self.add(Target(path,preq,self.parent))
 
-
-    def need_build(self, path) -> bool:
-        '''
-            Returns True if this target need to build
-        '''
-        def _need_build(_path:str):
-            if not os.path.exists(_path):
+    def get_build_layers(self) -> list[list[Target]]:
+        local_targets : list[Target] = []
+        for target in self.targets:
+            local_targets.append(Target(target.path,target.prerequisites.copy(),self.parent))
+        
+        def _need_build(target:Target) -> bool:
+            if not os.path.exists(target.path):
                 return True
-
-            target = self.find(_path)
-            if not target:
-                return False
-
             target_time = os.path.getmtime(target.path)
 
             for prq in target.prerequisites:
-                # start recursive
-                if _need_build(prq):
-                    return True
-
                 if os.path.exists(prq):
                     prq_time = os.path.getmtime(prq)
                     if prq_time > target_time:
                         return True
                 else:
                     return True
-            return False
-        return _need_build(path)
+            return False        
 
-    def get_build_layers(self) -> list[list[Target]]:
-        '''
-            Returns targets that need to compile
-            separated by layers of dependency/
-            Each layer has independent objects, 
-            that can be compiled in parallel
-        '''
-        local_targets : list[Target] = []
-        for target in self.targets:
-            local_targets.append(Target(target.path,target.prerequisites.copy(),self.parent))
-        
-        def remove_local_prereqs(t:Target):
+        def _prerequisites_in_targets(target:Target):
+            for prq in target.prerequisites:
+                for t in local_targets:
+                    if t.path == prq:
+                        return True
+            return False
+
+        def _remove(t:Target):
             for target in local_targets:
                 if t.path in target.prerequisites:
                     target.prerequisites.remove(t.path)
-            
-
-        # remove not buildable
-        torem = []
-        for target in local_targets:
-        
-            try:
-                if not self.need_build(target.path):
-                    remove_local_prereqs(target)
-                    torem.append(target)
-
-            except Exceptions.CircularDetected as e:
-                print(f'{target.path}: {e} : will be passed')
-                continue
-        
-        for t in torem:
             local_targets.remove(t)
 
-        def get_lower_nodes() -> list[Target]:
-            # Empty prerequisits and those who have preqs not found in targets
-            lower_nodes : list[Target] = []    
+        def _pop_layer():
+            torem = []
             for target in local_targets:
-                if not target.prerequisites:
-                    lower_nodes.append(target)
-                    continue
-                else:
-                    for prq in target.prerequisites:
-                        if not self.find(prq):
-                            lower_nodes.append(target)
-                            break
+                if not _need_build(target):
+                    torem.append(target)
 
-            # Remove from prerequisites upper nodes
-            for node in lower_nodes:
-                remove_local_prereqs(node)
-                local_targets.remove(node)
+            for t in torem:
+                _remove(t)
 
-            return lower_nodes
+            layer : set[Target] = set()
+            for target in local_targets:
+                if not _prerequisites_in_targets(target):
+                    layer.add(target)
+            
+            for t in layer:
+                _remove(t)
+
+            return list(layer)
         
         # form list of compile layers
         result : list[list[Target]] = []
 
-        layer = get_lower_nodes()
+        layer = _pop_layer()
         while(len(layer) > 0):
             result.append(layer)
-            layer = get_lower_nodes()
+            layer = _pop_layer()
         return result
+
 #----------------------END TARGET----------------------
 
 #----------------------PROJECT--------------------------
@@ -199,19 +194,20 @@ class ProjectConfig:
         self.SRC_EXTS               : set[str] = {".cpp",".c"}
         self.SRC_DIRS               : set[str] = {"src"}
         self.SRC_RECURSIVE_DIRS     : set[str] = set()
-        self.INCLUDE_DIRS           : set[str] = self.SRC_DIRS
-        self.EXPORT_INCLUDE_DIRS    : set[str] = self.INCLUDE_DIRS
-        self.LOCAL_COMPILER         : set[str] = self.COMPILER
+        self.INCLUDE_DIRS           : set[str] = {}
+        self.EXPORT_INCLUDE_DIRS    : set[str] = {}
         self.AR_FLAGS               : set[str] = {"r","c","s"}
         self.CFLAGS                 : set[str] = {"-O3"}
         self.SUBPROJECTS            : set[str] = set()
-        self.SUBPROJECTS_LIBS       : set[str] = set()
         self.LIB_DIRS               : set[str] = set()
         self.LIBS                   : set[str] = set()
         self.INCLUDE_FLAGS          : set[str] = set()
         self.LIB_DIRS_FLAGS         : set[str] = set()
         self.LIBS_FLAGS             : set[str] = set()
         self.PKG_SEARCH             : set[str] = set()
+        self.SOURCES                : set[str] = set()
+        self.EXPORT_DEFINITIONS     : set[str] = set()
+        self.DEFINITIONS            : set[str] = set()
 
         self.MAX_THREADS_NUM        : int = 10
 
@@ -229,11 +225,17 @@ class Project:
         if not self.config.OUT_FILE:
             raise Exceptions.OutFileEmpty()
 
+        # default vars in config
+        if not self.config.INCLUDE_DIRS:
+            self.config.INCLUDE_DIRS = self.config.SRC_DIRS
+        if not self.config.EXPORT_INCLUDE_DIRS:
+            self.config.EXPORT_INCLUDE_DIRS = self.config.INCLUDE_DIRS
+
         # default sources targets 
-        sources = set(find_files(self.config.SRC_DIRS, self.config.SRC_EXTS))
+        self.config.SOURCES.update(set(find_files(self.config.SRC_DIRS, self.config.SRC_EXTS)))
         objects = []
         deps = []
-        for src in sources:
+        for src in self.config.SOURCES:
             path = self.config.OBJ_PATH + "/" + os.path.relpath(src).replace('../','updir/')
             spl = os.path.splitext(path)
             obj = f"{spl[0]}.o"
@@ -243,20 +245,51 @@ class Project:
             self.target_man.add(Target(obj,{src},self))
 
         # default out file target
-        self.target_man.add(Target(self.config.OUT_FILE,set(objects),self))
+        main_target = Target(self.config.OUT_FILE,set(objects),self)
+        self.target_man.add(main_target)
 
         # load targets from .d files if they present
-        for d in deps:
-            self.target_man.get_from_d_file(d)
+        #for d in deps:
+        #    self.target_man.get_from_d_file(d)
+
+        # subprojects
+        for sp in self.subprojects:
+            os.chdir(sp.cwd)
+            sp_path = os.path.abspath(sp.config.OUT_FILE)
+            main_target.prerequisites.add(sp_path)
+            fname = os.path.basename(sp.config.OUT_FILE)
+            self.config.DEFINITIONS.update(sp.config.EXPORT_DEFINITIONS)
+            if fname.startswith('lib') and fname.endswith('.a'):
+                lib = fname[3:-2]
+                self.config.LIBS.add(lib)
+                self.config.LIB_DIRS.add(os.path.dirname(sp_path))
+                spe = {os.path.abspath(x) for x in sp.config.EXPORT_INCLUDE_DIRS}
+                self.config.INCLUDE_DIRS.update(spe)
+            os.chdir(self.cwd)
 
         # prepare flags
         self.config.INCLUDE_FLAGS     = {f"-I{x}" for x in self.config.INCLUDE_DIRS}
         self.config.LIB_DIRS_FLAGS    = {f"-L{x}" for x in self.config.LIB_DIRS}
         self.config.LIBS_FLAGS        = {f"-l{x}" for x in self.config.LIBS}
+        self.config.CFLAGS.update({f"-D{x}" for x in self.config.DEFINITIONS})
+
+        # pkg-config
+        if self.config.PKG_SEARCH:
+            out = sh_capture(["pkg-config","--cflags","--libs"]+list(self.config.PKG_SEARCH))
+            if not out.startswith('-'):
+                if "command not found" in out:
+                    print(color_text(31,f"Project {self.cwd}: PKG_SEARCH present, but pkg-config not found"))
+                if "No package" in out:
+                    print(color_text(31,f"Project {self.cwd}: {out}"))
+            else:
+                out = out.replace('\n','')
+                spl = out.split(' ')
+                self.config.INCLUDE_FLAGS.update({x for x in spl if x.startswith('-I')})
+                self.config.LIB_DIRS_FLAGS.update({x for x in spl if x.startswith('-L')})
+                self.config.LIBS_FLAGS.update({x for x in spl if x.startswith('-l')})
 
     def reload_subprojects(self):
         self.subprojects = []
-        self.config.SUBPROJECTS.update(self.config.SUBPROJECTS_LIBS)
         
         for sp in self.config.SUBPROJECTS:
             sp_abs = os.path.abspath(sp)
@@ -277,24 +310,20 @@ class Project:
                 print(color_text(31,f"Subproject {sp}: {e}"))
                 continue
 
-            
     def get_build_layers(self) -> list[list[str]]:        
-        result = self.target_man.get_build_layers()
+        def get_targets(p:Project): 
+            for prj in p.subprojects:
+                targets = get_targets(prj)
+                for target in targets:
+                    if not p.target_man.find(target.path):
+                        p.target_man.add(target)
 
-        # subprojects
+            return p.target_man.targets
         
-        for prj in self.subprojects:
-            orig_dir = os.getcwd()
-            os.chdir(prj.cwd)
-            sbl = prj.get_build_layers()
-            os.chdir(orig_dir)
-            
-            newlayers = []
-            for i in itertools.zip_longest(result,sbl,fillvalue=[]):
-                newlayers.append(i[0]+i[1])
-            result = newlayers
-
+        get_targets(self)
+        result = self.target_man.get_build_layers()
         return result
+
 #----------------------END PROJECT---------------------
     
 #----------------------BUILD PROCESS-------------------
@@ -307,7 +336,6 @@ else:
         return f"\033[{color}m{text}\033[0m"
 
 def sh(cmd: list[str]) -> int:
-    #print(cmd)
     return subprocess.Popen(cmd).wait()
 
 def build_c(source:str, obj:str, p:Project) -> int:
@@ -344,13 +372,20 @@ def link(cmd:list[str], out:str):
     
     if code == 0:
         new_size=os.stat(out).st_size
-        print(f'{out} size {new_size} [{diff(old_size,new_size)}]')
+        print(f'{out} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
 
     return code
 
 def link_exe(out:str, objects:set[str], p:Project) -> int:
     print(f"{color_text(32,'Linking executable')}: {os.path.relpath(out)}")
-    cmd = [p.config.COMPILER]+list(p.config.LIB_DIRS_FLAGS)+list(objects)+['-o',out]+list(p.config.LIBS)
+    cmd = [p.config.COMPILER]+list(p.config.LIB_DIRS_FLAGS)+list(objects)+['-o',out]+list(p.config.LIBS_FLAGS)
+    print(cmd)
+    return link(cmd,out)
+
+def link_static(out:str, objects:set[str], p:Project) -> int:
+    print(f"{color_text(33,'Linking static')}: {os.path.relpath(out)}")
+    cmd = [p.config.AR]+[''.join(p.config.AR_FLAGS)]+[out]+list(objects)
+    print(cmd)
     return link(cmd,out)
 
 def build_target(t:Target) -> int:
@@ -361,15 +396,13 @@ def build_target(t:Target) -> int:
     target = t.parent.target_man.find(t.path)
     match(os.path.splitext(target.path)[1]):
         case '' | '.exe': return link_exe(target.path,target.prerequisites,t.parent)
+        case '.a': return link_static(target.path,target.prerequisites,t.parent)
 
     print(f"{color_text(91,'Not found builder for')}: {os.path.relpath(t.path)}")
     return 1
-#----------------------END BUILD PROCESS---------------
 
-#
 def build(p:Project):
     layers = p.get_build_layers()
-    
     if not layers:
         print('Nothing to build')
         return
@@ -390,9 +423,22 @@ def build(p:Project):
         print(color_text(32,'Done'))
     else:
         print(color_text(91,'Error. Stopped.'))
+#----------------------END BUILD PROCESS---------------
+
+def clean(p:Project):
+    for sp in p.subprojects:
+        os.chdir(sp.cwd)
+        clean(sp)
+        os.chdir(p.cwd)
+
+    shutil.rmtree(p.config.OBJ_PATH,True)
+    dirs = os.path.dirname(p.config.OUT_FILE)
+    silentremove(p.config.OUT_FILE)
+    if dirs:
+        shutil.rmtree(dirs,True)
 
 def process(pc:ProjectConfig, argv : list[str]):
-    argv.append('bUilD')
     for arg in argv:
         match(arg.lower()):
             case 'build':   build(Project(pc))
+            case 'clean':   clean(Project(pc))
