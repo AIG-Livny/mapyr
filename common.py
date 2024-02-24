@@ -65,9 +65,9 @@ def silentremove(filename):
 
 #----------------------TARGET--------------------------
 class Target:
-    def __init__(self, path:str, preqs : set[str], parent:"Project") -> None:
+    def __init__(self, path:str, preqs : list[str], parent:"Project") -> None:
         self.path : str =  os.path.abspath(path)
-        self.prerequisites : set[str] = {os.path.abspath(p) for p in preqs}
+        self.prerequisites : list[str] = [os.path.abspath(p) for p in preqs]
         self.parent  : Project = parent
     
     def __repr__(self) -> str:
@@ -82,7 +82,7 @@ class TargetManager:
         found = self.find(t.path)
         if found is not None:
             #found.prerequisites = t.prerequisites
-            found.prerequisites.update(t.prerequisites)
+            found.prerequisites.extend(t.prerequisites)
         else:
             self.targets.append(t)
 
@@ -115,10 +115,10 @@ class TargetManager:
 
             prerequisites = spl[1].split(' ')
             path = os.path.abspath(spl[0])
-            preq : set[str] = set()
+            preq : list[str] = []
             for prq in prerequisites:
                 if prq != '':
-                    preq.add(os.path.abspath(prq))
+                    preq.append(os.path.abspath(prq))
             
             self.add(Target(path,preq,self.parent))
 
@@ -191,30 +191,31 @@ class ProjectConfig:
         self.COMPILER               : str = "clang"
         self.OBJ_PATH               : str = "obj"
         self.AR                     : str = "ar"
-        self.SRC_EXTS               : set[str] = {".cpp",".c"}
-        self.SRC_DIRS               : set[str] = {"src"}
-        self.SRC_RECURSIVE_DIRS     : set[str] = set()
-        self.INCLUDE_DIRS           : set[str] = {}
-        self.EXPORT_INCLUDE_DIRS    : set[str] = {}
-        self.AR_FLAGS               : set[str] = {"r","c","s"}
-        self.CFLAGS                 : set[str] = {"-O3"}
-        self.SUBPROJECTS            : set[str] = set()
-        self.LIB_DIRS               : set[str] = set()
-        self.LIBS                   : set[str] = set()
-        self.INCLUDE_FLAGS          : set[str] = set()
-        self.LIB_DIRS_FLAGS         : set[str] = set()
-        self.LIBS_FLAGS             : set[str] = set()
-        self.PKG_SEARCH             : set[str] = set()
-        self.SOURCES                : set[str] = set()
-        self.EXPORT_DEFINITIONS     : set[str] = set()
-        self.DEFINITIONS            : set[str] = set()
+        self.SRC_EXTS               : list[str] = [".cpp",".c"]
+        self.SRC_DIRS               : list[str] = ["src"]
+        self.SRC_RECURSIVE_DIRS     : list[str] = []
+        self.INCLUDE_DIRS           : list[str] = []
+        self.EXPORT_INCLUDE_DIRS    : list[str] = []
+        self.AR_FLAGS               : list[str] = ["r","c","s"]
+        self.CFLAGS                 : list[str] = ["-O3"]
+        self.SUBPROJECTS            : list[str] = []
+        self.LIB_DIRS               : list[str] = []
+        self.LIBS                   : list[str] = []
+        self.INCLUDE_FLAGS          : list[str] = []
+        self.LIB_DIRS_FLAGS         : list[str] = []
+        self.LIBS_FLAGS             : list[str] = []
+        self.PKG_SEARCH             : list[str] = []
+        self.SOURCES                : list[str] = []
+        self.EXCLUDE_SOURCES        : list[str] = []
+        self.EXPORT_DEFINITIONS     : list[str] = []
+        self.DEFINITIONS            : list[str] = []
 
         self.MAX_THREADS_NUM        : int = 10
 
 class Project:
     def __init__(self, config:ProjectConfig) -> None:
         self.target_man = TargetManager(self)
-        self.config = config
+        self.config : ProjectConfig = config
         self.subprojects : list[Project] = []
         self.cwd : str = os.getcwd()
 
@@ -232,7 +233,9 @@ class Project:
             self.config.EXPORT_INCLUDE_DIRS = self.config.INCLUDE_DIRS
 
         # default sources targets 
-        self.config.SOURCES.update(set(find_files(self.config.SRC_DIRS, self.config.SRC_EXTS)))
+        self.config.SOURCES += find_files(self.config.SRC_DIRS, self.config.SRC_EXTS)
+        self.config.EXCLUDE_SOURCES = [os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES]
+        self.config.SOURCES = [x for x in self.config.SOURCES if x not in self.config.EXCLUDE_SOURCES]
         objects = []
         deps = []
         for src in self.config.SOURCES:
@@ -256,22 +259,24 @@ class Project:
         for sp in self.subprojects:
             os.chdir(sp.cwd)
             sp_path = os.path.abspath(sp.config.OUT_FILE)
-            main_target.prerequisites.add(sp_path)
+            main_target.prerequisites.append(sp_path)
             fname = os.path.basename(sp.config.OUT_FILE)
-            self.config.DEFINITIONS.update(sp.config.EXPORT_DEFINITIONS)
+            self.config.DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
+            self.config.LIBS.extend(sp.config.LIBS)
+            self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
             if fname.startswith('lib') and fname.endswith('.a'):
                 lib = fname[3:-2]
-                self.config.LIBS.add(lib)
-                self.config.LIB_DIRS.add(os.path.dirname(sp_path))
-                spe = {os.path.abspath(x) for x in sp.config.EXPORT_INCLUDE_DIRS}
-                self.config.INCLUDE_DIRS.update(spe)
+                self.config.LIBS.append(lib)
+                self.config.LIB_DIRS.append(os.path.dirname(sp_path))
+                spe = [os.path.abspath(x) for x in sp.config.EXPORT_INCLUDE_DIRS]
+                self.config.INCLUDE_DIRS.extend(spe)
             os.chdir(self.cwd)
 
         # prepare flags
-        self.config.INCLUDE_FLAGS     = {f"-I{x}" for x in self.config.INCLUDE_DIRS}
-        self.config.LIB_DIRS_FLAGS    = {f"-L{x}" for x in self.config.LIB_DIRS}
-        self.config.LIBS_FLAGS        = {f"-l{x}" for x in self.config.LIBS}
-        self.config.CFLAGS.update({f"-D{x}" for x in self.config.DEFINITIONS})
+        self.config.INCLUDE_FLAGS     = [f"-I{x}" for x in self.config.INCLUDE_DIRS]
+        self.config.LIB_DIRS_FLAGS    = [f"-L{x}" for x in self.config.LIB_DIRS]
+        self.config.LIBS_FLAGS        = [f"-l{x}" for x in self.config.LIBS]
+        self.config.CFLAGS.extend([f"-D{x}" for x in self.config.DEFINITIONS])
 
         # pkg-config
         if self.config.PKG_SEARCH:
@@ -284,9 +289,9 @@ class Project:
             else:
                 out = out.replace('\n','')
                 spl = out.split(' ')
-                self.config.INCLUDE_FLAGS.update({x for x in spl if x.startswith('-I')})
-                self.config.LIB_DIRS_FLAGS.update({x for x in spl if x.startswith('-L')})
-                self.config.LIBS_FLAGS.update({x for x in spl if x.startswith('-l')})
+                self.config.INCLUDE_FLAGS.extend([x for x in spl if x.startswith('-I')])
+                self.config.LIB_DIRS_FLAGS.extend([x for x in spl if x.startswith('-L')])
+                self.config.LIBS_FLAGS.extend([x for x in spl if x.startswith('-l')])
 
     def reload_subprojects(self):
         self.subprojects = []
@@ -343,9 +348,8 @@ def build_c(source:str, obj:str, p:Project) -> int:
     os.makedirs(os.path.dirname(obj),exist_ok=True)
     basename = os.path.splitext(obj)[0]
     depflags = ['-MT',obj,'-MMD','-MP','-MF',f"{basename}.d"]
-    cmd = [p.config.COMPILER]+depflags
-    cmd += list(p.config.CFLAGS)
-    cmd += list(p.config.INCLUDE_FLAGS) +['-c','-o',obj,source]
+    cmd = [p.config.COMPILER]+depflags + p.config.CFLAGS
+    cmd += p.config.INCLUDE_FLAGS +['-c','-o',obj,source]
     return sh(cmd)
 
 def get_size(path:str) -> int:
@@ -362,7 +366,7 @@ def diff(old:int, new:int) -> str:
         summstr = color_text(32,f'{diff}')
     return summstr
 
-def link(cmd:list[str], out:str):
+def link(cmd:list[str], out:str, print_size=False):
     os.makedirs(os.path.dirname(out),exist_ok=True)
     old_size = 0
     if os.path.exists(out):
@@ -371,21 +375,20 @@ def link(cmd:list[str], out:str):
     code = sh(cmd)
     
     if code == 0:
-        new_size=os.stat(out).st_size
-        print(f'{out} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
+        if print_size:
+            new_size=os.stat(out).st_size
+            print(f'{out} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
 
     return code
 
-def link_exe(out:str, objects:set[str], p:Project) -> int:
+def link_exe(out:str, objects:list[str], p:Project) -> int:
     print(f"{color_text(32,'Linking executable')}: {os.path.relpath(out)}")
-    cmd = [p.config.COMPILER]+list(p.config.LIB_DIRS_FLAGS)+list(objects)+['-o',out]+list(p.config.LIBS_FLAGS)
-    print(cmd)
+    cmd = [p.config.COMPILER]+p.config.LIB_DIRS_FLAGS+objects+['-o',out]+p.config.LIBS_FLAGS
     return link(cmd,out)
 
-def link_static(out:str, objects:set[str], p:Project) -> int:
+def link_static(out:str, objects:list[str], p:Project) -> int:
     print(f"{color_text(33,'Linking static')}: {os.path.relpath(out)}")
-    cmd = [p.config.AR]+[''.join(p.config.AR_FLAGS)]+[out]+list(objects)
-    print(cmd)
+    cmd = [p.config.AR]+[''.join(p.config.AR_FLAGS)]+[out]+objects
     return link(cmd,out)
 
 def build_target(t:Target) -> int:
