@@ -431,11 +431,11 @@ def build_target(t:Target) -> int:
     print(f"{color_text(91,'Not found builder for')}: {os.path.relpath(t.path)}")
     return 1
 
-def build(p:Project):
+def build(p:Project) -> bool:
     layers = p.get_build_layers()
     if not layers:
         print('Nothing to build')
-        return
+        return True
     
     for layer in layers:
         layer : list[Target]
@@ -451,8 +451,10 @@ def build(p:Project):
                 break
     if not error:
         print(color_text(32,'Done'))
+        return True
     else:
         print(color_text(91,'Error. Stopped.'))
+        return False
 #----------------------END BUILD PROCESS---------------
 
 def clean(p:Project):
@@ -467,12 +469,16 @@ def clean(p:Project):
     if dirs:
         shutil.rmtree(dirs,True)
 
+def run(pc:ProjectConfig):
+    build(Project(pc))
+    sh(pc.OUT_FILE)
+
 def process(pc:ProjectConfig):
     if len(sys.argv)>1:
         for arg in sys.argv:
             match(arg.lower()):
                 case 'name':    print(pc.OUT_FILE)
-                case 'run':     sh(pc.OUT_FILE)
+                case 'run':     run(pc)
                 case 'build':   build(Project(pc))
                 case 'clean':   clean(Project(pc))
     else:
