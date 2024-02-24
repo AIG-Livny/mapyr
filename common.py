@@ -342,6 +342,7 @@ class Project:
                 continue
 
     def get_build_layers(self) -> list[list[str]]:        
+        # load all subproject targets recursive
         def get_targets(p:Project): 
             for prj in p.subprojects:
                 targets = get_targets(prj)
@@ -470,6 +471,8 @@ def process(pc:ProjectConfig):
     if len(sys.argv)>1:
         for arg in sys.argv:
             match(arg.lower()):
+                case 'name':    print(pc.OUT_FILE)
+                case 'run':     sh(pc.OUT_FILE)
                 case 'build':   build(Project(pc))
                 case 'clean':   clean(Project(pc))
     else:
