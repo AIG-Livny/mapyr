@@ -1,7 +1,5 @@
 import sys
 import os
-import imp
-import itertools
 import shutil
 import subprocess
 import concurrent.futures
@@ -53,8 +51,6 @@ def sh_capture(cmd: list[str]) -> str:
         return stderr.decode()
     return stdout.decode()
 
-import os, errno
-
 def silentremove(filename):
     try:
         os.remove(filename)
@@ -90,7 +86,6 @@ class TargetManager:
     def find(self, path: str) -> Target:
         path = os.path.abspath(path)
 
-        # at first search exact path
         for t in self.targets:
             if path == t.path:
                 return t        
@@ -471,8 +466,8 @@ def clean(p:Project):
     if dirs:
         shutil.rmtree(dirs,True)
 
-def process(pc:ProjectConfig, argv : list[str]):
-    for arg in argv:
+def process(pc:ProjectConfig):
+    for arg in sys.argv:
         match(arg.lower()):
             case 'build':   build(Project(pc))
             case 'clean':   clean(Project(pc))
