@@ -4,6 +4,8 @@ Mapyr - is python build system GCC/clang oriented.
 
 For simple and complex projects with subprojects in it. 
 
+There is relate project for GNU Make `Mapr` https://github.com/AIG-Livny/mapr.git
+
 # Quick start
 Create `src/main.c` and `Mapyrfile` with this content and run `./Mapyrfile`
 ```py
