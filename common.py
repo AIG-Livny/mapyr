@@ -467,7 +467,10 @@ def clean(p:Project):
         shutil.rmtree(dirs,True)
 
 def process(pc:ProjectConfig):
-    for arg in sys.argv:
-        match(arg.lower()):
-            case 'build':   build(Project(pc))
-            case 'clean':   clean(Project(pc))
+    if len(sys.argv)>1:
+        for arg in sys.argv:
+            match(arg.lower()):
+                case 'build':   build(Project(pc))
+                case 'clean':   clean(Project(pc))
+    else:
+        build(Project(pc))
