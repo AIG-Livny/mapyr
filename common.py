@@ -65,10 +65,11 @@ def silentremove(filename):
 
 #----------------------TARGET--------------------------
 class Target:
-    def __init__(self, path:str, preqs : list[str], parent:"Project") -> None:
-        self.path : str =  os.path.abspath(path)
-        self.prerequisites : list[str] = [os.path.abspath(p) for p in preqs]
-        self.parent  : Project = parent
+    def __init__(self, path:str, preqs : list[str], parent:"Project", need_build:bool=False) -> None:
+        self.path           : str           =  os.path.abspath(path)
+        self.prerequisites  : list[str]     = [os.path.abspath(p) for p in preqs]
+        self.parent         : Project       = parent
+        self.need_build     : bool          = need_build
     
     def __repr__(self) -> str:
         return f'{self.path}:{self.prerequisites}'
@@ -76,7 +77,7 @@ class Target:
 class TargetManager:
     def __init__(self, parent:"Project") -> None:
         self.targets : list[Target] = []
-        self.parent  : Project = parent
+        self.parent  : Project      = parent
 
     def add(self, t:Target):
         found = self.find(t.path)
@@ -86,15 +87,24 @@ class TargetManager:
         else:
             self.targets.append(t)
 
-    def find(self, rule: str) -> Target:
-        rule = os.path.abspath(rule)
+    def find(self, path: str) -> Target:
+        path = os.path.abspath(path)
 
-        # at first search exact rule
+        # at first search exact path
         for t in self.targets:
-            if rule == t.path:
+            if path == t.path:
                 return t        
         return None
     
+    def find_contains_prerequisite(self,path:str) -> list[Target]:
+        path = os.path.abspath(path)
+
+        result=[]
+        for target in self.targets:
+            if path in target.prerequisites:
+                result.append(target)
+        return result
+
     def get_from_d_file(self, path : str):
         if not os.path.isfile(path):
             return
@@ -122,11 +132,12 @@ class TargetManager:
             
             self.add(Target(path,preq,self.parent))
 
-    def get_build_layers(self) -> list[list[Target]]:
-        local_targets : list[Target] = []
+    def check_if_need_build(self):
+        # reset all states
         for target in self.targets:
-            local_targets.append(Target(target.path,target.prerequisites.copy(),self.parent))
-        
+            target.need_build = False
+
+        # at first check files
         def _need_build(target:Target) -> bool:
             if not os.path.exists(target.path):
                 return True
@@ -140,6 +151,26 @@ class TargetManager:
                 else:
                     return True
             return False        
+
+        def _set_parents_need_build(path : str):
+            parents = self.find_contains_prerequisite(path)
+            for par in parents:
+                par.need_build = True
+                _set_parents_need_build(par.path)
+
+        # next check if children rebuilds, so parents need rebuild too
+        for target in self.targets:
+            if _need_build(target):
+                target.need_build = True
+                _set_parents_need_build(target.path)
+
+    def get_build_layers(self) -> list[list[Target]]:
+        self.check_if_need_build()
+        
+        # Copying targets
+        local_targets : list[Target] = []
+        for target in self.targets:
+            local_targets.append(Target(target.path,target.prerequisites.copy(),self.parent,target.need_build))
 
         def _prerequisites_in_targets(target:Target):
             for prq in target.prerequisites:
@@ -157,7 +188,7 @@ class TargetManager:
         def _pop_layer():
             torem = []
             for target in local_targets:
-                if not _need_build(target):
+                if not target.need_build:
                     torem.append(target)
 
             for t in torem:
@@ -252,8 +283,8 @@ class Project:
         self.target_man.add(main_target)
 
         # load targets from .d files if they present
-        #for d in deps:
-        #    self.target_man.get_from_d_file(d)
+        for d in deps:
+            self.target_man.get_from_d_file(d)
 
         # subprojects
         for sp in self.subprojects:
