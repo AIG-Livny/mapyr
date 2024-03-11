@@ -421,7 +421,7 @@ def link_static(out:str, objects:list[str], p:Project) -> int:
 def build_target(t:Target) -> int:
     for prq in t.prerequisites:
         match(os.path.splitext(prq)[1]):
-            case '.c': return build_c(prq, t.path, t.parent)
+            case '.c' | '.cpp': return build_c(prq, t.path, t.parent)
     
     target = t.parent.target_man.find(t.path)
     match(os.path.splitext(target.path)[1]):
