@@ -3,6 +3,9 @@ import os
 import shutil
 import subprocess
 import concurrent.futures
+import logging
+
+VERSION = '0.2'
 
 #----------------------EXCEPTIONS----------------------
 class Exceptions:
@@ -14,6 +17,32 @@ class Exceptions:
     class OutFileEmpty(CustomException):
         "Variable: OUT_FILE empty!"
 #----------------------END EXCEPTIONS------------------
+
+#----------------------LOGGING-------------------------
+file_formatter = logging.Formatter('%(asctime)-15s|%(threadName)-11s|%(levelname)-8s|%(filename)s:%(lineno)s| %(message)s')
+console_formatter = logging.Formatter('[%(levelname)s]: %(message)s')
+
+file_path = f"{os.path.dirname(os.path.realpath(__file__))}/debug.log"
+file_handler = logging.FileHandler(file_path,'w',encoding='utf8')
+file_handler.setFormatter(file_formatter)
+
+console_handler = logging.StreamHandler()
+verb = os.getenv('VERBOSITY')
+if verb and verb.isdigit():
+    console_handler.setLevel(int(verb))
+else:
+    console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(console_formatter)
+
+rootlog = logging.getLogger()
+rootlog.addHandler(file_handler)
+
+app_logger = logging.getLogger('main')
+app_logger.propagate = False
+app_logger.setLevel(logging.DEBUG)
+app_logger.addHandler(file_handler)
+app_logger.addHandler(console_handler)
+#----------------------LOGGING-------------------------
 
 #----------------------UTILS---------------------------
 def find_files_recursive(dirs:list[str], exts:list[str]) -> list[str]:
@@ -162,11 +191,12 @@ class TargetManager:
     def get_build_layers(self) -> list[list[Target]]:
         self.check_if_need_build()
         
-        # Copying targets
+        # Copying targets for be able to remove them not harming original data
         local_targets : list[Target] = []
         for target in self.targets:
             local_targets.append(Target(target.path,target.prerequisites.copy(),self.parent,target.need_build))
 
+        # Check if target has prerequisites that also present in targets
         def _prerequisites_in_targets(target:Target):
             for prq in target.prerequisites:
                 for t in local_targets:
@@ -174,6 +204,7 @@ class TargetManager:
                         return True
             return False
 
+        # Remove target and all prerequisites contained in other targets refered to this target
         def _remove(t:Target):
             for target in local_targets:
                 if t.path in target.prerequisites:
@@ -181,6 +212,7 @@ class TargetManager:
             local_targets.remove(t)
 
         def _pop_layer():
+            # Remove targets that not need to build
             torem = []
             for target in local_targets:
                 if not target.need_build:
@@ -188,12 +220,14 @@ class TargetManager:
 
             for t in torem:
                 _remove(t)
-
+            
+            # If target prerequisites not present in targets, it can be built right now
             layer : set[Target] = set()
             for target in local_targets:
                 if not _prerequisites_in_targets(target):
                     layer.add(target)
             
+            # Already copied targets into layer must be removed from not processed targets
             for t in layer:
                 _remove(t)
 
@@ -309,9 +343,9 @@ class Project:
             out = sh_capture(["pkg-config","--cflags","--libs"]+list(self.config.PKG_SEARCH))
             if not out.startswith('-'):
                 if "command not found" in out:
-                    print(color_text(31,f"Project {self.cwd}: PKG_SEARCH present, but pkg-config not found"))
+                    app_logger.error(color_text(31,f"Project {self.cwd}: PKG_SEARCH present, but pkg-config not found"))
                 if "No package" in out:
-                    print(color_text(31,f"Project {self.cwd}: {out}"))
+                    app_logger.error(color_text(31,f"Project {self.cwd}: {out}"))
             else:
                 out = out.replace('\n','')
                 spl = out.split(' ')
@@ -333,12 +367,12 @@ class Project:
                 
                 orig_dir = os.getcwd()
                 os.chdir(sp_abs)
-                np = Project(self.tmp_config)
+                np = [Project(x) for x in self.tmp_config]
                 os.chdir(orig_dir)
-                self.subprojects.append(np)
+                self.subprojects.extend(np)
             
             except Exception as e:
-                print(color_text(31,f"Subproject {sp}: {e}"))
+                app_logger.error(color_text(31,f"Subproject {sp}: {e}"))
                 continue
 
     def get_build_layers(self) -> list[list[str]]:        
@@ -371,12 +405,13 @@ def sh(cmd: list[str]) -> int:
     return subprocess.Popen(cmd).wait()
 
 def build_c(source:str, obj:str, p:Project) -> int:
-    print(f"{color_text(94,'Building')}: {os.path.relpath(obj)}")    
+    app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(obj)}") 
     os.makedirs(os.path.dirname(obj),exist_ok=True)
     basename = os.path.splitext(obj)[0]
     depflags = ['-MT',obj,'-MMD','-MP','-MF',f"{basename}.d"]
     cmd = [p.config.COMPILER]+depflags + p.config.CFLAGS
     cmd += p.config.INCLUDE_FLAGS +['-c','-o',obj,source]
+    app_logger.debug(f'build_c {cmd=}')
     return sh(cmd)
 
 def get_size(path:str) -> int:
@@ -404,17 +439,18 @@ def link(cmd:list[str], out:str, print_size=False):
     if code == 0:
         if print_size:
             new_size=os.stat(out).st_size
-            print(f'{out} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
+            app_logger.info(f'{out} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
 
     return code
 
 def link_exe(out:str, objects:list[str], p:Project) -> int:
-    print(f"{color_text(32,'Linking executable')}: {os.path.relpath(out)}")
+    app_logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(out)}")
     cmd = [p.config.COMPILER]+p.config.LIB_DIRS_FLAGS+objects+['-o',out]+p.config.LIBS_FLAGS
+    app_logger.debug(f'link_exe {cmd=}')
     return link(cmd,out)
 
 def link_static(out:str, objects:list[str], p:Project) -> int:
-    print(f"{color_text(33,'Linking static')}: {os.path.relpath(out)}")
+    app_logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(out)}")
     cmd = [p.config.AR]+[''.join(p.config.AR_FLAGS)]+[out]+objects
     return link(cmd,out)
 
@@ -424,17 +460,19 @@ def build_target(t:Target) -> int:
             case '.c' | '.cpp': return build_c(prq, t.path, t.parent)
     
     target = t.parent.target_man.find(t.path)
+    app_logger.debug(f'build_target: {target.path}')
+    preqs = [x for x in target.prerequisites if x.endswith('.o')]
     match(os.path.splitext(target.path)[1]):
-        case '' | '.exe': return link_exe(target.path,target.prerequisites,t.parent)
-        case '.a': return link_static(target.path,target.prerequisites,t.parent)
+        case '' | '.exe': return link_exe(target.path,preqs,t.parent)
+        case '.a': return link_static(target.path,preqs,t.parent)
 
-    print(f"{color_text(91,'Not found builder for')}: {os.path.relpath(t.path)}")
+    app_logger.error(f"{color_text(91,'Not found builder for')}: {os.path.relpath(t.path)}")
     return 1
 
 def build(p:Project) -> bool:
     layers = p.get_build_layers()
     if not layers:
-        print('Nothing to build')
+        app_logger.info('Nothing to build')
         return True
     
     for layer in layers:
@@ -450,10 +488,10 @@ def build(p:Project) -> bool:
             if error:
                 break
     if not error:
-        print(color_text(32,'Done'))
+        app_logger.info(color_text(32,'Done'))
         return True
     else:
-        print(color_text(91,'Error. Stopped.'))
+        app_logger.error(color_text(91,'Error. Stopped.'))
         return False
 #----------------------END BUILD PROCESS---------------
 
@@ -473,13 +511,18 @@ def run(pc:ProjectConfig):
     build(Project(pc))
     sh(pc.OUT_FILE)
 
-def process(pc:ProjectConfig):
+def process(pc:list[ProjectConfig]):
     if len(sys.argv)>1:
         for arg in sys.argv:
             match(arg.lower()):
-                case 'name':    print(pc.OUT_FILE)
-                case 'run':     run(pc)
-                case 'build':   build(Project(pc))
-                case 'clean':   clean(Project(pc))
+                case 'name':    print(pc[0].OUT_FILE)
+                case 'run':     run(pc[0])
+                case 'build':   
+                    for p in pc:
+                        build(Project(p))
+                case 'clean': 
+                    for p in pc:
+                        clean(Project(p))
     else:
-        build(Project(pc))
+        for p in pc:
+            build(Project(p))

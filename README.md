@@ -1,4 +1,4 @@
-# Mapyr v.0.1
+# Mapyr v.0.2
 
 Mapyr - is python build system GCC/clang oriented. 
 
@@ -10,12 +10,14 @@ There is relate project for GNU Make `Mapr` https://github.com/AIG-Livny/mapr.gi
 Create `src/main.c` and `Mapyrfile` with this content and run `./Mapyrfile`
 ```py
 #!/usr/bin/python3
-def config() -> "ProjectConfig":
+def config() -> list["ProjectConfig"]:
+    result = []
     p = ProjectConfig()
 
     p.OUT_FILE = "bin/cloed"
 
-    return p
+    result.append(p)
+    return result
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git
@@ -126,7 +128,8 @@ ___lib
 
 ```py
 #!/usr/bin/python3
-def config() -> "ProjectConfig":
+def config() -> list["ProjectConfig"]:
+    result = []
     p = ProjectConfig()
 
     p.OUT_FILE = "bin/cloed"
@@ -146,7 +149,8 @@ def config() -> "ProjectConfig":
         "fontconfig",
     ]
 
-    return p
+    result.append(p)
+    return result
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git
