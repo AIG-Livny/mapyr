@@ -125,7 +125,7 @@ class Command:
     '''
 
     mfLinkStatic = f"{color_text(33,'Linking static')}: {{}}"
-    mfLinkExe    = f"{color_text(33,'Linking static')}: {{}}"
+    mfLinkExe    = f"{color_text(32,'Linking executable')}: {{}}"
     mfBuild      = f"{color_text(94,'Building')}: {{}}"
     
     def __init__(self, target_name:str, cmd:list[str], message_format:str) -> None:
