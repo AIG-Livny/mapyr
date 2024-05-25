@@ -1,4 +1,4 @@
-# Mapyr v.0.2
+# Mapyr v.0.3
 
 Mapyr - is python build system GCC/clang oriented. 
 
@@ -42,6 +42,8 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
  	- executable: without extension or `.exe`
 	- static library:	`lib%.a`
 	- dynamic library:	`%.dll` or `%.so`
+
+- `GROUPS` - A project can belong to several groups. Default group is DEBUG When Mapyrfile started without arguments, it runs build DEBUG group 
 
 - `PKG_SEARCH` - libraries to search in `pkg-config` and add flags 
 
