@@ -118,7 +118,7 @@ def diff(old:int, new:int) -> str:
 
 #----------------------END UTILS-----------------------
 
-#----------------------CMD BUILDERS--------------------
+#----------------------COMMAND-------------------------
 class Command:
     '''
         Command unit contains comand line + console message format
@@ -138,7 +138,7 @@ class Command:
         app_logger.debug(f'run: {self.cmd}')
         return sh(self.cmd)
 
-#----------------------END CMD BUILDERS-_--------------
+#----------------------END COMMAND---------------------
 
 #----------------------TARGET--------------------------
 class Target:
@@ -214,7 +214,47 @@ class Target:
 
 #----------------------END TARGET----------------------
 
-#----------------------PROJECT--------------------------
+#----------------------TARGET CONTAINER----------------
+class TargetContainer:
+    def __init__(self) -> None:
+        self.targets : list[Target] = []
+
+    def find_target(self, path: str) -> Target:
+        '''
+            Find target by out file
+        '''
+        path = os.path.abspath(path)
+
+        for t in self.targets:
+            if path == t.path:
+                return t        
+        return None
+
+    def add(self, t:Target) -> Target:
+        '''
+            Add target or extend prerequisites if target already exists
+        '''
+        found = self.find_target(t.path)
+        if found:
+            for prq in t.prerequisites:
+                if prq not in found.prerequisites:
+                    self.add(prq)
+                    found.prerequisites.append(prq)
+            return found
+        else:
+            self.targets.append(t)
+            return t
+    
+    def add_from_container(self, cnt:"TargetContainer"):
+        '''
+            Add targets from other container
+        '''
+        for t in cnt.targets:
+            self.add(t)
+
+#----------------------END TARGET CONTAINER------------
+
+#----------------------PROJECT-------------------------
 class ProjectConfig:
     def __init__(self) -> None:
         self.OUT_FILE : str = ""
@@ -355,8 +395,8 @@ class Project:
         `cwd` - working directory of project
     '''
     def __init__(self, config:ProjectConfig) -> None:
-        self.targets            : list[Target] = []
-        self.targets_recursive  : list[Target] = []
+        self.targets            = TargetContainer()
+        self.targets_recursive  = TargetContainer()
         self.config             : ProjectConfig = config
         self.main_target        : Target = Target(self.config.OUT_FILE,[],self)
         self.subprojects        : list[Project] = []
@@ -393,48 +433,22 @@ class Project:
             preq : list[Target] = []
             for prq in prerequisites:
                 if prq:
-                    prq_target = self.add_target(Target(os.path.abspath(prq),[],self))
+                    prq_target = self.targets.add(Target(os.path.abspath(prq),[],self))
                     preq.append(prq_target)
             
-            self.add_target(Target(path,preq,self))
+            self.targets.add(Target(path,preq,self))
 
     def find_targets_contains_prerequisite(self,target:Target) -> list[Target]:
         '''
             Find all targets that contain `path` in them prerequisites that need build
         '''
         result=[]
-        for trg in self.targets_recursive:
+        for trg in self.targets_recursive.targets:
             if trg.need_build:
                 continue
             if target in trg.prerequisites:
                 result.append(trg)
         return result
-
-    def find_target(self, path: str) -> Target:
-        '''
-            Find target by out file
-        '''
-        path = os.path.abspath(path)
-
-        for t in self.targets:
-            if path == t.path:
-                return t        
-        return None
-
-    def add_target(self, t:Target) -> Target:
-        '''
-            Add target or extend prerequisites if target already exists
-        '''
-        found = self.find_target(t.path)
-        if found:
-            for prq in t.prerequisites:
-                if prq not in found.prerequisites:
-                    self.add_target(prq)
-                    found.prerequisites.append(prq)
-            return found
-        else:
-            self.targets.append(t)
-            return t
 
     def check_if_need_build(self):
         '''
@@ -468,25 +482,25 @@ class Project:
                 _set_parents_need_build(par.path)
 
         # check if children rebuilds, so parents need rebuild too
-        for target in self.targets_recursive:
+        for target in self.targets_recursive.targets:
             if not target.need_build and _need_build(target):
                 target.need_build = True
                 _set_parents_need_build(target)
 
-    def get_build_layers(self) -> list[list[Target]]:
+    def get_build_layers(self, group:str='DEBUG') -> list[list[Target]]:
         '''
             Return list of layers. Layer is bunch of targets that can be built parralel
         '''
-        self.load_targets_recursive()
+        self.load_targets_recursive(group)
         self.check_if_need_build()
 
         # remove targets that not need to build
         torem = []
-        for target in self.targets_recursive:
+        for target in self.targets_recursive.targets:
             if not target.need_build:
                 torem.append(target)
         for target in torem:
-            self.targets_recursive.remove(target)
+            self.targets_recursive.targets.remove(target)
 
         def _pop_layer() -> list[Target]:            
             '''
@@ -495,7 +509,7 @@ class Project:
                 So, these targets we can build parallel -> in one layer 
             '''
             layer : set[Target] = set()
-            for target in self.targets_recursive:
+            for target in self.targets_recursive.targets:
                 for prq in target.prerequisites:
                     if prq.need_build:
                         break
@@ -509,7 +523,7 @@ class Project:
         layer = _pop_layer()
         while(len(layer) > 0):
             for target in layer:
-                self.targets_recursive.remove(target)
+                self.targets_recursive.targets.remove(target)
                 target.need_build = False
             result.append(layer)
             layer = _pop_layer()
@@ -520,8 +534,8 @@ class Project:
             Load project variables, init subproject's configs
         '''
         self.main_target = None
-        self.targets = []
-        self.targets_recursive = []
+        self.targets.targets = []
+        self.targets_recursive.targets = []
         self.load_subprojects()
 
         if not self.config.OUT_FILE:
@@ -552,12 +566,12 @@ class Project:
             obj = f"{spl[0]}.o"
             dep = f"{spl[0]}.d"
             deps.append(dep)
-            src_target = self.add_target(Target(src,[],self))
-            obj_target = self.add_target(Target(obj,[src_target],self))
+            src_target = self.targets.add(Target(src,[],self))
+            obj_target = self.targets.add(Target(obj,[src_target],self))
             object_targets.append(obj_target)
 
         # Main target
-        self.main_target = self.add_target(Target(self.config.OUT_FILE,object_targets,self))
+        self.main_target = self.targets.add(Target(self.config.OUT_FILE,object_targets,self))
 
         # Load targets from .d files if they present
         for d in deps:
@@ -606,18 +620,23 @@ class Project:
                 self.config.LIB_DIRS_FLAGS.extend([x for x in spl if x.startswith('-L')])
                 self.config.LIBS_FLAGS.extend([x for x in spl if x.startswith('-l')])
 
-    def load_targets_recursive(self):
+    def load_targets_recursive(self, group:str='DEBUG'):
         '''
             Load all subproject targets recursive
         '''
-        def _get_targets(p:Project):
-            result = []
+        def _get_targets(p:Project) -> TargetContainer:
+            result = TargetContainer()
             for prj in p.subprojects:
-                result.extend(_get_targets(prj))
-            result.extend(p.targets)
+                targs = _get_targets(prj)
+                if not group in prj.config.GROUPS:
+                    continue
+                result.add_from_container(targs)
+            
+            if group in p.config.GROUPS:
+                result.add_from_container(p.targets)
             return result
         
-        self.targets_recursive = _get_targets(self)
+        self.targets_recursive.add_from_container(_get_targets(self))
 
     def load_subprojects(self):
         '''
@@ -647,12 +666,12 @@ class Project:
                 app_logger.error(color_text(31,f"Subproject {sp}: {e}"))
                 continue
 
-    def build(self) -> bool:
+    def build(self, group:str='DEBUG') -> bool:
         '''
             Build project
         '''
         self.load()
-        layers = self.get_build_layers()
+        layers = self.get_build_layers(group)
         
         if not layers:
             app_logger.info('Nothing to build')
@@ -681,13 +700,16 @@ class Project:
             app_logger.error(color_text(91,'Error. Stopped.'))
             return False
 
-    def clean(self):
+    def clean(self, group:str='DEBUG'):
         self.load_subprojects()
         for sp in self.subprojects:
             os.chdir(sp.cwd)
-            sp.clean()
+            sp.clean(group)
             os.chdir(self.cwd)
 
+        if not group in self.config.GROUPS:
+            return
+        
         shutil.rmtree(self.config.OBJ_PATH,True)
         dirs = os.path.dirname(self.config.OUT_FILE)
         silentremove(self.config.OUT_FILE)
@@ -717,9 +739,8 @@ def process(pc:list[ProjectConfig]):
         case 'run':     Project(pc[0]).run()
         case 'build':
             for p in pc:
-                if group in p.GROUPS:
-                    Project(p).build()
+                Project(p).build(group)
+
         case 'clean': 
             for p in pc:
-                if group in p.GROUPS:
-                    Project(p).clean()
+                Project(p).clean(group)

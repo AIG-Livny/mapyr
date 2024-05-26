@@ -34,6 +34,11 @@ if __name__ == "__main__":
         from mapyr.common import *
     process(config()) 
 ```
+# Commands
+- `build [group]` - build projects in group. Default group is 'DEBUG'
+- `clean [group]` - clean projects in group
+- `name` - print output file path of first project
+- `run` - execute output file of first project
 
 # Variables list
 Almost all variables is optional, except `OUT_FILE`. In brackets default value if exists.
