@@ -704,6 +704,7 @@ class Project:
 #----------------------END PROJECT---------------------
     
 def process(pc:list[ProjectConfig]):
+    os.chdir(os.path.dirname(sys.argv[0]))
     group = 'DEBUG'
     cmd = 'build'
     if len(sys.argv)>1:
