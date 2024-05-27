@@ -458,7 +458,7 @@ class Project:
                 result.append(trg)
         return result
 
-    def check_if_need_build(self):
+    def check_if_need_build(self, group:str='DEBUG'):
         '''
             Check and set `need_build` variable
         '''
@@ -467,11 +467,15 @@ class Project:
             '''
                 If target file not exists or prerequisites files newer than target 
             '''
+            if 'libgrid.a' in target.path:
+                pass
             if not os.path.exists(target.path):
                 return True
             target_time = os.path.getmtime(target.path)
 
             for prq in target.prerequisites:
+                if not group in prq.parent.config.GROUPS:
+                    continue
                 if os.path.exists(prq.path):
                     prq_time = os.path.getmtime(prq.path)
                     if prq_time > target_time:
@@ -500,7 +504,7 @@ class Project:
             Return list of layers. Layer is bunch of targets that can be built parralel
         '''
         self.load_targets_recursive(group)
-        self.check_if_need_build()
+        self.check_if_need_build(group)
 
         # remove targets that not need to build
         torem = []
