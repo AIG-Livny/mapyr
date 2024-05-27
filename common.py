@@ -54,12 +54,12 @@ else:
 #----------------------LOGGING-------------------------
 
 #----------------------UTILS---------------------------
-def find_files(dirs:set[str], exts:set[str]) -> set[str]:
+def find_files(dirs:list[str], exts:list[str]) -> list[str]:
     '''
         Search files with extensions listed in `exts` 
         in directories listed in `dirs` not recursive
     '''
-    result = set()
+    result = []
     for dir in dirs:
         if not os.path.exists(dir):
             continue
@@ -67,7 +67,7 @@ def find_files(dirs:set[str], exts:set[str]) -> set[str]:
             filepath = f'{dir}/{file}'
             if os.path.isfile(filepath):
                 if os.path.splitext(file)[1] in exts:
-                    result.add(os.path.abspath(filepath))
+                    result.append(os.path.abspath(filepath))
     return result
 
 def sh(cmd: list[str]) -> int:
@@ -116,6 +116,13 @@ def diff(old:int, new:int) -> str:
         summstr = color_text(32,f'{diff}')
     return summstr
 
+def unique_list(l:list):
+    result = []
+    for v in l:
+        if v not in result:
+            result.append(v)
+    return result
+
 #----------------------END UTILS-----------------------
 
 #----------------------COMMAND-------------------------
@@ -128,14 +135,15 @@ class Command:
     mfLinkExe    = f"{color_text(32,'Linking executable')}: {{}}"
     mfBuild      = f"{color_text(94,'Building')}: {{}}"
     
-    def __init__(self, target_name:str, cmd:list[str], message_format:str) -> None:
-        self.target_name = target_name
+    def __init__(self, parent_target:"Target", cmd:list[str], message_format:str) -> None:
+        self.parent_target = parent_target
         self.cmd = cmd 
         self.message_format = message_format
 
-    def run(self) -> int:
-        app_logger.info(self.message_format.format(self.target_name))
-        app_logger.debug(f'run: {self.cmd}')
+    def run(self, ) -> int:
+        name = os.path.relpath(self.parent_target.path)
+        app_logger.info(self.message_format.format(name))
+        app_logger.debug(f'{name} run: {self.cmd}')
         return sh(self.cmd)
 
 #----------------------END COMMAND---------------------
@@ -162,20 +170,20 @@ class Target:
         p = self.parent
         def _cmd_link_exe() -> Command:
             obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
-            cmd = [p.config.COMPILER]+list(p.config.LIB_DIRS_FLAGS)+obj+['-o',self.path]+list(p.config.LIBS_FLAGS)
-            return Command(os.path.relpath(self.path), cmd, Command.mfLinkExe)
+            cmd = [p.config.COMPILER]+p.config.LIB_DIRS_FLAGS+obj+['-o',self.path]+p.config.LIBS_FLAGS
+            return Command(self, cmd, Command.mfLinkExe)
 
         def _cmd_link_static() -> Command:
             obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
             cmd = [p.config.AR]+[''.join(p.config.AR_FLAGS)]+[self.path]+obj
-            return Command(os.path.relpath(self.path), cmd, Command.mfLinkStatic)
+            return Command(self, cmd, Command.mfLinkStatic)
         
         def _cmd_build_c(source) -> Command:
             basename = os.path.splitext(self.path)[0]
             depflags = ['-MT',self.path,'-MMD','-MP','-MF',f"{basename}.d"]
-            cmd = [p.config.COMPILER]+depflags + list(p.config.CFLAGS)
-            cmd += list(p.config.INCLUDE_FLAGS) +['-c','-o',self.path,source]
-            return Command(os.path.relpath(self.path), cmd, Command.mfBuild)
+            cmd = [p.config.COMPILER]+depflags + p.config.CFLAGS
+            cmd += p.config.INCLUDE_FLAGS +['-c','-o',self.path,source]
+            return Command(self, cmd, Command.mfBuild)
 
         ext_trg = os.path.splitext(self.path)[1]
         match(ext_trg):
@@ -263,7 +271,7 @@ class ProjectConfig:
             This defines build type: exe, static, shared or other... 
         '''
         
-        self.GROUPS : set[str] = ['DEBUG']
+        self.GROUPS : list[str] = ['DEBUG']
         '''
             A project can belong to several groups. Default group is DEBUG
             When Mapyrfile started without arguments, it runs build DEBUG group
@@ -284,99 +292,99 @@ class ProjectConfig:
             Archiver command
         '''
 
-        self.SRC_EXTS               : set[str] = {".cpp",".c"}
+        self.SRC_EXTS               : list[str] = [".cpp",".c"]
         '''
             Source extensions for search them in `SRC_DIRS`
         '''
 
-        self.SRC_DIRS               : set[str] = {"src"}
+        self.SRC_DIRS               : list[str] = ["src"]
         '''
             Source directories for NOT recursive search
         '''
 
-        self.SRC_RECURSIVE_DIRS     : set[str] = set()
+        self.SRC_RECURSIVE_DIRS     : list[str] = []
         '''
             Source directories for recursive search
         '''
         
-        self.INCLUDE_DIRS           : set[str] = set()
+        self.INCLUDE_DIRS           : list[str] = []
         '''
             Private include directories
         '''
         
-        self.EXPORT_INCLUDE_DIRS    : set[str] = set()
+        self.EXPORT_INCLUDE_DIRS    : list[str] = []
         '''
             Include directories that also will be sended to parent project
             and parent will include them while his building process 
         '''
         
-        self.AR_FLAGS               : set[str] = {"r","c","s"}
+        self.AR_FLAGS               : list[str] = ["r","c","s"]
         '''
             Archiver flags 
         '''
 
-        self.CFLAGS                 : set[str] = {"-O3"}
+        self.CFLAGS                 : list[str] = ["-O3"]
         '''
             Compile flags
         '''
 
-        self.SUBPROJECTS            : set[str] = set()
+        self.SUBPROJECTS            : list[str] = []
         '''
             Paths to directories contains Mapyrfile.
             If subproject is library, it will automatic included as library in the project.
         '''
         
-        self.LIB_DIRS               : set[str] = set()
+        self.LIB_DIRS               : list[str] = []
         '''
             Directories where looking for libraries
         '''
 
-        self.LIBS                   : set[str] = set()
+        self.LIBS                   : list[str] = []
         '''
-            Set of libraries
+            List of libraries
         '''
         
-        self.INCLUDE_FLAGS          : set[str] = set()
+        self.INCLUDE_FLAGS          : list[str] = []
         '''
             Flags that will passed to compiler in include part of command.
             This is automatic variable, but you can add any flag if needed
         '''
         
-        self.LIB_DIRS_FLAGS         : set[str] = set()
+        self.LIB_DIRS_FLAGS         : list[str] = []
         '''
             Flags that will passed to linker in library directories part of command.
             This is automatic variable, but you can add any flag if needed
         '''
        
-        self.LIBS_FLAGS             : set[str] = set()
+        self.LIBS_FLAGS             : list[str] = []
         '''
             Flags that will passed to linker in library part of command.
             This is automatic variable, but you can add any flag if needed
         '''
 
-        self.PKG_SEARCH             : set[str] = set()
+        self.PKG_SEARCH             : list[str] = []
         '''
             If `pkg-config` installed in system, so this libraries will be auto included in project 
         '''
 
-        self.SOURCES                : set[str] = set()
+        self.SOURCES                : list[str] = []
         '''
             Particular source files. 
             This is automatic variable, but you can add any flag if needed
         '''
 
-        self.EXCLUDE_SOURCES        : set[str] = set()
+        self.EXCLUDE_SOURCES        : list[str] = []
         '''
             Sometimes need to exclude specific source file from auto search
             Add path to source in relative or absolute format
         '''
 
-        self.DEFINITIONS            : set[str] = set()
+        self.DEFINITIONS            : list[str] = []
         '''
             Private definitions, that will be used only in this project
         '''
         
-        self.EXPORT_DEFINITIONS     : set[str] = set()
+        self.EXPORT_DEFINITIONS     : list[str] = []
         '''
             Definitions that used in the project and also will be passed to parent project
         '''
@@ -529,14 +537,14 @@ class Project:
             layer = _pop_layer()
         return result
 
-    def load(self, group:str='DEBUG'):
+    def load(self):
         '''
             Load project variables, init subproject's configs
         '''
         self.main_target = None
         self.targets.targets = []
         self.targets_recursive.targets = []
-        self.load_subprojects(group)
+        self.load_subprojects()
 
         if not self.config.OUT_FILE:
             raise Exceptions.OutFileEmpty()
@@ -548,9 +556,9 @@ class Project:
             self.config.EXPORT_INCLUDE_DIRS = self.config.INCLUDE_DIRS
 
         # Looking for sources, exclude specified source files
-        self.config.SOURCES.update(find_files(self.config.SRC_DIRS, self.config.SRC_EXTS))
-        self.config.EXCLUDE_SOURCES = set([os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES])
-        self.config.SOURCES = set([x for x in self.config.SOURCES if x not in self.config.EXCLUDE_SOURCES])
+        self.config.SOURCES += find_files(self.config.SRC_DIRS, self.config.SRC_EXTS)
+        self.config.EXCLUDE_SOURCES = [os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES]
+        self.config.SOURCES = [x for x in self.config.SOURCES if x not in self.config.EXCLUDE_SOURCES]
         
         '''
             Create targets from sources.
@@ -582,30 +590,29 @@ class Project:
             chdir is for right abspath work
         '''
         for sp in self.subprojects:
-            if not group in sp.config.GROUPS:
-                continue
             os.chdir(sp.cwd)
             sp_path = os.path.abspath(sp.config.OUT_FILE)
             self.main_target.prerequisites.append(sp.main_target)
             fname = os.path.basename(sp.config.OUT_FILE)
-            self.config.DEFINITIONS.update(sp.config.EXPORT_DEFINITIONS)
-            self.config.LIBS.update(sp.config.LIBS)
-            self.config.LIB_DIRS.update(sp.config.LIB_DIRS)
+            self.config.DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
+            self.config.LIBS.extend(sp.config.LIBS)
+            self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
             
             # Libraries
             if fname.startswith('lib') and fname.endswith('.a'):
                 lib = fname[3:-2]
-                self.config.LIBS.add(lib)
-                self.config.LIB_DIRS.add(os.path.dirname(sp_path))
+                self.config.LIBS.insert(0,lib)
+                self.config.LIB_DIRS.append(os.path.dirname(sp_path))
                 spe = [os.path.abspath(x) for x in sp.config.EXPORT_INCLUDE_DIRS]
-                self.config.INCLUDE_DIRS.update(spe)
+                self.config.INCLUDE_DIRS.extend(spe)
             os.chdir(self.cwd)
 
         # prepare flags
-        self.config.INCLUDE_FLAGS     = {f"-I{x}" for x in self.config.INCLUDE_DIRS}
-        self.config.LIB_DIRS_FLAGS    = {f"-L{x}" for x in self.config.LIB_DIRS}
-        self.config.LIBS_FLAGS        = {f"-l{x}" for x in self.config.LIBS}
-        self.config.CFLAGS.update({f"-D{x}" for x in self.config.DEFINITIONS})
+        self.config.INCLUDE_FLAGS     = unique_list([f"-I{x}" for x in self.config.INCLUDE_DIRS])
+        self.config.LIB_DIRS_FLAGS    = unique_list([f"-L{x}" for x in self.config.LIB_DIRS])
+        self.config.LIBS_FLAGS        = unique_list([f"-l{x}" for x in self.config.LIBS])
+        self.config.CFLAGS.extend([f"-D{x}" for x in self.config.DEFINITIONS])
+        self.config.CFLAGS = unique_list(self.config.CFLAGS)
 
         # Load libs data from pkg-config
         if self.config.PKG_SEARCH:
@@ -618,9 +625,9 @@ class Project:
             else:
                 out = out.replace('\n','')
                 spl = out.split(' ')
-                self.config.INCLUDE_FLAGS.update([x for x in spl if x.startswith('-I')])
-                self.config.LIB_DIRS_FLAGS.update([x for x in spl if x.startswith('-L')])
-                self.config.LIBS_FLAGS.update([x for x in spl if x.startswith('-l')])
+                self.config.INCLUDE_FLAGS.extend([x for x in spl if x.startswith('-I')])
+                self.config.LIB_DIRS_FLAGS.extend([x for x in spl if x.startswith('-L')])
+                self.config.LIBS_FLAGS.extend([x for x in spl if x.startswith('-l')])
 
     def load_targets_recursive(self, group:str='DEBUG'):
         '''
@@ -640,7 +647,7 @@ class Project:
         
         self.targets_recursive.add_from_container(_get_targets(self))
 
-    def load_subprojects(self,group:str='DEBUG'):
+    def load_subprojects(self):
         '''
             We are loading the subproject data by executing `config` function 
             inside `Mapyrfile`
@@ -660,8 +667,7 @@ class Project:
                 os.chdir(sp_abs)
                 subprojects = [Project(x) for x in self.tmp_config]
                 for p in subprojects:
-                    p.config.DEFINITIONS.update(self.config.DEFINITIONS)
-                    p.load(group)
+                    p.load()
                 os.chdir(orig_dir)
                 self.subprojects.extend(subprojects)
             
@@ -673,7 +679,7 @@ class Project:
         '''
             Build project
         '''
-        self.load(group)
+        self.load()
         layers = self.get_build_layers(group)
         
         if not layers:
@@ -688,11 +694,13 @@ class Project:
                 os.makedirs(os.path.dirname(t.path),exist_ok=True)
 
             error = False
+            problem_task = None
             with concurrent.futures.ProcessPoolExecutor(max_workers=self.config.MAX_THREADS_NUM) as executor:
                 builders = [executor.submit(t.build) for t in layer]
-                for builder in builders:
-                    if builder.result() != 0:
+                for i in range(len(builders)):
+                    if builders[i].result() != 0:
                         error = True
+                        problem_task=layer[i]
                         break
                 if error:
                     break
@@ -700,11 +708,12 @@ class Project:
             app_logger.info(color_text(32,'Done'))
             return True
         else:
-            app_logger.error(color_text(91,'Error. Stopped.'))
+            name = os.path.relpath(problem_task.path)
+            app_logger.error(color_text(91,f'{name}: Error. Stopped.'))
             return False
 
     def clean(self, group:str='DEBUG'):
-        self.load_subprojects(group)
+        self.load_subprojects()
         for sp in self.subprojects:
             os.chdir(sp.cwd)
             sp.clean(group)
