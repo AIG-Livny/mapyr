@@ -1,4 +1,4 @@
-# Mapyr v.0.3
+# Mapyr v.0.4
 
 Mapyr - is python build system GCC/clang oriented. 
 
@@ -141,20 +141,20 @@ def config() -> list["ProjectConfig"]:
 
     p.OUT_FILE = "bin/cloed"
 
-    p.CFLAGS  = ["-g","-O0"]
-    p.LIBS = ['m']
-    p.SUBPROJECTS = [
+    p.CFLAGS  = {"-g","-O0"}
+    p.LIBS = {'m'}
+    p.SUBPROJECTS = {
         "lib/mathc",
         "lib/shaderutils",
         "lib/freetype-gl",
-        ]
+    }
 
-    p.PKG_SEARCH = [
+    p.PKG_SEARCH = {
         "freetype2",
         "glew",
         "glfw3",
         "fontconfig",
-    ]
+    }
 
     result.append(p)
     return result

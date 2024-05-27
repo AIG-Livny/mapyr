@@ -5,7 +5,7 @@ import subprocess
 import concurrent.futures
 import logging
 
-VERSION = '0.3'
+VERSION = '0.4'
 
 #----------------------EXCEPTIONS----------------------
 class Exceptions:
@@ -54,12 +54,12 @@ else:
 #----------------------LOGGING-------------------------
 
 #----------------------UTILS---------------------------
-def find_files(dirs:list[str], exts:list[str]) -> list[str]:
+def find_files(dirs:set[str], exts:set[str]) -> set[str]:
     '''
         Search files with extensions listed in `exts` 
         in directories listed in `dirs` not recursive
     '''
-    result = []
+    result = set()
     for dir in dirs:
         if not os.path.exists(dir):
             continue
@@ -67,7 +67,7 @@ def find_files(dirs:list[str], exts:list[str]) -> list[str]:
             filepath = f'{dir}/{file}'
             if os.path.isfile(filepath):
                 if os.path.splitext(file)[1] in exts:
-                    result.append(os.path.abspath(filepath))
+                    result.add(os.path.abspath(filepath))
     return result
 
 def sh(cmd: list[str]) -> int:
@@ -162,7 +162,7 @@ class Target:
         p = self.parent
         def _cmd_link_exe() -> Command:
             obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
-            cmd = [p.config.COMPILER]+p.config.LIB_DIRS_FLAGS+obj+['-o',self.path]+p.config.LIBS_FLAGS
+            cmd = [p.config.COMPILER]+list(p.config.LIB_DIRS_FLAGS)+obj+['-o',self.path]+list(p.config.LIBS_FLAGS)
             return Command(os.path.relpath(self.path), cmd, Command.mfLinkExe)
 
         def _cmd_link_static() -> Command:
@@ -173,8 +173,8 @@ class Target:
         def _cmd_build_c(source) -> Command:
             basename = os.path.splitext(self.path)[0]
             depflags = ['-MT',self.path,'-MMD','-MP','-MF',f"{basename}.d"]
-            cmd = [p.config.COMPILER]+depflags + p.config.CFLAGS
-            cmd += p.config.INCLUDE_FLAGS +['-c','-o',self.path,source]
+            cmd = [p.config.COMPILER]+depflags + list(p.config.CFLAGS)
+            cmd += list(p.config.INCLUDE_FLAGS) +['-c','-o',self.path,source]
             return Command(os.path.relpath(self.path), cmd, Command.mfBuild)
 
         ext_trg = os.path.splitext(self.path)[1]
@@ -263,7 +263,7 @@ class ProjectConfig:
             This defines build type: exe, static, shared or other... 
         '''
         
-        self.GROUPS : list[str] = ['DEBUG']
+        self.GROUPS : set[str] = ['DEBUG']
         '''
             A project can belong to several groups. Default group is DEBUG
             When Mapyrfile started without arguments, it runs build DEBUG group
@@ -284,99 +284,99 @@ class ProjectConfig:
             Archiver command
         '''
 
-        self.SRC_EXTS               : list[str] = [".cpp",".c"]
+        self.SRC_EXTS               : set[str] = {".cpp",".c"}
         '''
             Source extensions for search them in `SRC_DIRS`
         '''
 
-        self.SRC_DIRS               : list[str] = ["src"]
+        self.SRC_DIRS               : set[str] = {"src"}
         '''
             Source directories for NOT recursive search
         '''
 
-        self.SRC_RECURSIVE_DIRS     : list[str] = []
+        self.SRC_RECURSIVE_DIRS     : set[str] = set()
         '''
             Source directories for recursive search
         '''
         
-        self.INCLUDE_DIRS           : list[str] = []
+        self.INCLUDE_DIRS           : set[str] = set()
         '''
             Private include directories
         '''
         
-        self.EXPORT_INCLUDE_DIRS    : list[str] = []
+        self.EXPORT_INCLUDE_DIRS    : set[str] = set()
         '''
             Include directories that also will be sended to parent project
             and parent will include them while his building process 
         '''
         
-        self.AR_FLAGS               : list[str] = ["r","c","s"]
+        self.AR_FLAGS               : set[str] = {"r","c","s"}
         '''
             Archiver flags 
         '''
 
-        self.CFLAGS                 : list[str] = ["-O3"]
+        self.CFLAGS                 : set[str] = {"-O3"}
         '''
             Compile flags
         '''
 
-        self.SUBPROJECTS            : list[str] = []
+        self.SUBPROJECTS            : set[str] = set()
         '''
             Paths to directories contains Mapyrfile.
             If subproject is library, it will automatic included as library in the project.
         '''
         
-        self.LIB_DIRS               : list[str] = []
+        self.LIB_DIRS               : set[str] = set()
         '''
             Directories where looking for libraries
         '''
 
-        self.LIBS                   : list[str] = []
+        self.LIBS                   : set[str] = set()
         '''
-            List of libraries
+            Set of libraries
         '''
         
-        self.INCLUDE_FLAGS          : list[str] = []
+        self.INCLUDE_FLAGS          : set[str] = set()
         '''
             Flags that will passed to compiler in include part of command.
             This is automatic variable, but you can add any flag if needed
         '''
         
-        self.LIB_DIRS_FLAGS         : list[str] = []
+        self.LIB_DIRS_FLAGS         : set[str] = set()
         '''
             Flags that will passed to linker in library directories part of command.
             This is automatic variable, but you can add any flag if needed
         '''
        
-        self.LIBS_FLAGS             : list[str] = []
+        self.LIBS_FLAGS             : set[str] = set()
         '''
             Flags that will passed to linker in library part of command.
             This is automatic variable, but you can add any flag if needed
         '''
 
-        self.PKG_SEARCH             : list[str] = []
+        self.PKG_SEARCH             : set[str] = set()
         '''
             If `pkg-config` installed in system, so this libraries will be auto included in project 
         '''
 
-        self.SOURCES                : list[str] = []
+        self.SOURCES                : set[str] = set()
         '''
             Particular source files. 
             This is automatic variable, but you can add any flag if needed
         '''
 
-        self.EXCLUDE_SOURCES        : list[str] = []
+        self.EXCLUDE_SOURCES        : set[str] = set()
         '''
             Sometimes need to exclude specific source file from auto search
             Add path to source in relative or absolute format
         '''
 
-        self.DEFINITIONS            : list[str] = []
+        self.DEFINITIONS            : set[str] = set()
         '''
             Private definitions, that will be used only in this project
         '''
         
-        self.EXPORT_DEFINITIONS     : list[str] = []
+        self.EXPORT_DEFINITIONS     : set[str] = set()
         '''
             Definitions that used in the project and also will be passed to parent project
         '''
@@ -529,14 +529,14 @@ class Project:
             layer = _pop_layer()
         return result
 
-    def load(self):
+    def load(self, group:str='DEBUG'):
         '''
             Load project variables, init subproject's configs
         '''
         self.main_target = None
         self.targets.targets = []
         self.targets_recursive.targets = []
-        self.load_subprojects()
+        self.load_subprojects(group)
 
         if not self.config.OUT_FILE:
             raise Exceptions.OutFileEmpty()
@@ -548,9 +548,9 @@ class Project:
             self.config.EXPORT_INCLUDE_DIRS = self.config.INCLUDE_DIRS
 
         # Looking for sources, exclude specified source files
-        self.config.SOURCES += find_files(self.config.SRC_DIRS, self.config.SRC_EXTS)
-        self.config.EXCLUDE_SOURCES = [os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES]
-        self.config.SOURCES = [x for x in self.config.SOURCES if x not in self.config.EXCLUDE_SOURCES]
+        self.config.SOURCES.update(find_files(self.config.SRC_DIRS, self.config.SRC_EXTS))
+        self.config.EXCLUDE_SOURCES = set([os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES])
+        self.config.SOURCES = set([x for x in self.config.SOURCES if x not in self.config.EXCLUDE_SOURCES])
         
         '''
             Create targets from sources.
@@ -582,28 +582,30 @@ class Project:
             chdir is for right abspath work
         '''
         for sp in self.subprojects:
+            if not group in sp.config.GROUPS:
+                continue
             os.chdir(sp.cwd)
             sp_path = os.path.abspath(sp.config.OUT_FILE)
             self.main_target.prerequisites.append(sp.main_target)
             fname = os.path.basename(sp.config.OUT_FILE)
-            self.config.DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
-            self.config.LIBS.extend(sp.config.LIBS)
-            self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
+            self.config.DEFINITIONS.update(sp.config.EXPORT_DEFINITIONS)
+            self.config.LIBS.update(sp.config.LIBS)
+            self.config.LIB_DIRS.update(sp.config.LIB_DIRS)
             
             # Libraries
             if fname.startswith('lib') and fname.endswith('.a'):
                 lib = fname[3:-2]
-                self.config.LIBS.append(lib)
-                self.config.LIB_DIRS.append(os.path.dirname(sp_path))
+                self.config.LIBS.add(lib)
+                self.config.LIB_DIRS.add(os.path.dirname(sp_path))
                 spe = [os.path.abspath(x) for x in sp.config.EXPORT_INCLUDE_DIRS]
-                self.config.INCLUDE_DIRS.extend(spe)
+                self.config.INCLUDE_DIRS.update(spe)
             os.chdir(self.cwd)
 
         # prepare flags
-        self.config.INCLUDE_FLAGS     = [f"-I{x}" for x in self.config.INCLUDE_DIRS]
-        self.config.LIB_DIRS_FLAGS    = [f"-L{x}" for x in self.config.LIB_DIRS]
-        self.config.LIBS_FLAGS        = [f"-l{x}" for x in self.config.LIBS]
-        self.config.CFLAGS.extend([f"-D{x}" for x in self.config.DEFINITIONS])
+        self.config.INCLUDE_FLAGS     = {f"-I{x}" for x in self.config.INCLUDE_DIRS}
+        self.config.LIB_DIRS_FLAGS    = {f"-L{x}" for x in self.config.LIB_DIRS}
+        self.config.LIBS_FLAGS        = {f"-l{x}" for x in self.config.LIBS}
+        self.config.CFLAGS.update({f"-D{x}" for x in self.config.DEFINITIONS})
 
         # Load libs data from pkg-config
         if self.config.PKG_SEARCH:
@@ -616,9 +618,9 @@ class Project:
             else:
                 out = out.replace('\n','')
                 spl = out.split(' ')
-                self.config.INCLUDE_FLAGS.extend([x for x in spl if x.startswith('-I')])
-                self.config.LIB_DIRS_FLAGS.extend([x for x in spl if x.startswith('-L')])
-                self.config.LIBS_FLAGS.extend([x for x in spl if x.startswith('-l')])
+                self.config.INCLUDE_FLAGS.update([x for x in spl if x.startswith('-I')])
+                self.config.LIB_DIRS_FLAGS.update([x for x in spl if x.startswith('-L')])
+                self.config.LIBS_FLAGS.update([x for x in spl if x.startswith('-l')])
 
     def load_targets_recursive(self, group:str='DEBUG'):
         '''
@@ -638,7 +640,7 @@ class Project:
         
         self.targets_recursive.add_from_container(_get_targets(self))
 
-    def load_subprojects(self):
+    def load_subprojects(self,group:str='DEBUG'):
         '''
             We are loading the subproject data by executing `config` function 
             inside `Mapyrfile`
@@ -658,7 +660,8 @@ class Project:
                 os.chdir(sp_abs)
                 subprojects = [Project(x) for x in self.tmp_config]
                 for p in subprojects:
-                    p.load()
+                    p.config.DEFINITIONS.update(self.config.DEFINITIONS)
+                    p.load(group)
                 os.chdir(orig_dir)
                 self.subprojects.extend(subprojects)
             
@@ -670,7 +673,7 @@ class Project:
         '''
             Build project
         '''
-        self.load()
+        self.load(group)
         layers = self.get_build_layers(group)
         
         if not layers:
@@ -701,7 +704,7 @@ class Project:
             return False
 
     def clean(self, group:str='DEBUG'):
-        self.load_subprojects()
+        self.load_subprojects(group)
         for sp in self.subprojects:
             os.chdir(sp.cwd)
             sp.clean(group)
