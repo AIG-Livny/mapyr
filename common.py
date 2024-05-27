@@ -467,8 +467,6 @@ class Project:
             '''
                 If target file not exists or prerequisites files newer than target 
             '''
-            if 'libgrid.a' in target.path:
-                pass
             if not os.path.exists(target.path):
                 return True
             target_time = os.path.getmtime(target.path)
