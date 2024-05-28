@@ -186,6 +186,7 @@ class Target:
         def _cmd_build_c(source) -> Command:
             # prepare flags
             p.config.CFLAGS.extend([f"-D{x}" for x in p.config.PRIVATE_DEFINITIONS])
+            p.config.CFLAGS.extend([f"-D{x}" for x in p.config.DEFINITIONS])
             p.config.INCLUDE_FLAGS.extend([f"-I{x}" for x in p.config.INCLUDE_DIRS])
             p.config.CFLAGS = unique_list(p.config.CFLAGS)
             p.config.INCLUDE_FLAGS = unique_list(p.config.INCLUDE_FLAGS)
@@ -620,9 +621,8 @@ class Project:
             self.config.PRIVATE_DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
             
             # Pass definitions to children
-            sp.config.PRIVATE_DEFINITIONS.extend(self.config.DEFINITIONS)
             sp.config.DEFINITIONS.extend(self.config.DEFINITIONS)
-            
+
             self.config.LIBS.extend(sp.config.LIBS)
             self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
             
