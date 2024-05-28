@@ -169,6 +169,11 @@ class Target:
         '''
         p = self.parent
         def _cmd_link_exe() -> Command:
+            p.config.LIB_DIRS_FLAGS.extend([f"-L{x}" for x in p.config.LIB_DIRS])
+            p.config.LIBS_FLAGS.extend([f"-l{x}" for x in p.config.LIBS])
+            p.config.LIB_DIRS_FLAGS = unique_list(p.config.LIB_DIRS_FLAGS)
+            p.config.LIBS_FLAGS = unique_list(p.config.LIBS_FLAGS)
+
             obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
             cmd = [p.config.COMPILER]+p.config.LIB_DIRS_FLAGS+obj+['-o',self.path]+p.config.LIBS_FLAGS
             return Command(self, cmd, Command.mfLinkExe)
@@ -179,6 +184,12 @@ class Target:
             return Command(self, cmd, Command.mfLinkStatic)
         
         def _cmd_build_c(source) -> Command:
+            # prepare flags
+            p.config.CFLAGS.extend([f"-D{x}" for x in p.config.PRIVATE_DEFINITIONS])
+            p.config.INCLUDE_FLAGS.extend([f"-I{x}" for x in p.config.INCLUDE_DIRS])
+            p.config.CFLAGS = unique_list(p.config.CFLAGS)
+            p.config.INCLUDE_FLAGS = unique_list(p.config.INCLUDE_FLAGS)
+
             basename = os.path.splitext(self.path)[0]
             depflags = ['-MT',self.path,'-MMD','-MP','-MF',f"{basename}.d"]
             cmd = [p.config.COMPILER]+depflags + p.config.CFLAGS
@@ -323,73 +334,78 @@ class ProjectConfig:
             Archiver flags 
         '''
 
-        self.CFLAGS                 : list[str] = ["-O3"]
+        self.CFLAGS : list[str] = ["-O3"]
         '''
             Compile flags
         '''
 
-        self.SUBPROJECTS            : list[str] = []
+        self.SUBPROJECTS : list[str] = []
         '''
             Paths to directories contains Mapyrfile.
             If subproject is library, it will automatic included as library in the project.
         '''
         
-        self.LIB_DIRS               : list[str] = []
+        self.LIB_DIRS : list[str] = []
         '''
             Directories where looking for libraries
         '''
 
-        self.LIBS                   : list[str] = []
+        self.LIBS : list[str] = []
         '''
             List of libraries
         '''
         
-        self.INCLUDE_FLAGS          : list[str] = []
+        self.INCLUDE_FLAGS : list[str] = []
         '''
             Flags that will passed to compiler in include part of command.
             This is automatic variable, but you can add any flag if needed
         '''
         
-        self.LIB_DIRS_FLAGS         : list[str] = []
+        self.LIB_DIRS_FLAGS : list[str] = []
         '''
             Flags that will passed to linker in library directories part of command.
             This is automatic variable, but you can add any flag if needed
         '''
        
-        self.LIBS_FLAGS             : list[str] = []
+        self.LIBS_FLAGS : list[str] = []
         '''
             Flags that will passed to linker in library part of command.
             This is automatic variable, but you can add any flag if needed
         '''
 
-        self.PKG_SEARCH             : list[str] = []
+        self.PKG_SEARCH : list[str] = []
         '''
             If `pkg-config` installed in system, so this libraries will be auto included in project 
         '''
 
-        self.SOURCES                : list[str] = []
+        self.SOURCES : list[str] = []
         '''
             Particular source files. 
             This is automatic variable, but you can add any flag if needed
         '''
 
-        self.EXCLUDE_SOURCES        : list[str] = []
+        self.EXCLUDE_SOURCES : list[str] = []
         '''
             Sometimes need to exclude specific source file from auto search
             Add path to source in relative or absolute format
         '''
 
-        self.DEFINITIONS            : list[str] = []
+        self.PRIVATE_DEFINITIONS : list[str] = []
         '''
             Private definitions, that will be used only in this project
         '''
         
-        self.EXPORT_DEFINITIONS     : list[str] = []
+        self.DEFINITIONS : list[str] = []
+        '''
+            Definitions used in this project and all its children
+        '''
+        
+        self.EXPORT_DEFINITIONS : list[str] = []
         '''
             Definitions that used in the project and also will be passed to parent project
         '''
         
-        self.MAX_THREADS_NUM        : int = 10
+        self.MAX_THREADS_NUM : int = 10
         '''
             Build threads limit
         '''
@@ -596,7 +612,17 @@ class Project:
             sp_path = os.path.abspath(sp.config.OUT_FILE)
             self.main_target.prerequisites.append(sp.main_target)
             fname = os.path.basename(sp.config.OUT_FILE)
-            self.config.DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
+            
+            # Pass export definitions up
+            self.config.EXPORT_DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
+            
+            # Accept exported definitions 
+            self.config.PRIVATE_DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
+            
+            # Pass definitions to children
+            sp.config.PRIVATE_DEFINITIONS.extend(self.config.DEFINITIONS)
+            sp.config.DEFINITIONS.extend(self.config.DEFINITIONS)
+            
             self.config.LIBS.extend(sp.config.LIBS)
             self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
             
@@ -608,13 +634,6 @@ class Project:
                 spe = [os.path.abspath(x) for x in sp.config.EXPORT_INCLUDE_DIRS]
                 self.config.INCLUDE_DIRS.extend(spe)
             os.chdir(self.cwd)
-
-        # prepare flags
-        self.config.INCLUDE_FLAGS     = unique_list([f"-I{x}" for x in self.config.INCLUDE_DIRS])
-        self.config.LIB_DIRS_FLAGS    = unique_list([f"-L{x}" for x in self.config.LIB_DIRS])
-        self.config.LIBS_FLAGS        = unique_list([f"-l{x}" for x in self.config.LIBS])
-        self.config.CFLAGS.extend([f"-D{x}" for x in self.config.DEFINITIONS])
-        self.config.CFLAGS = unique_list(self.config.CFLAGS)
 
         # Load libs data from pkg-config
         if self.config.PKG_SEARCH:

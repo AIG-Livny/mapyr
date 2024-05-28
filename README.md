@@ -78,7 +78,11 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 - `EXPORT_INCLUDE_DIRS` - (INCLUDE_DIRS) - if specified upper project will get only these directories automatically. This variable is for dividing private and public includes.
 
-- `EXPORT_DEFINITIONS` - list of definitions that will be sended to upper project. In example: you have library with `#ifdef` statements, you configure and build library as independent project. When upper project will include `.h`, he will not to know about any definitions that was used during building library, so `EXPORT_DEFINITIONS` can pass them up. These definitions also used in building project itself.
+- `PRIVATE_DEFINITIONS` - definitions used only in this project
+
+- `DEFINITIONS` - definitions used in this project and all children recursive
+
+- `EXPORT_DEFINITIONS` - list of definitions that will be sended to upper project. In example: you have a library with `#ifdef` statements, you configure and build library as independent project. When upper project will include `.h`, he will not to know about any definitions that was used during building library, so `EXPORT_DEFINITIONS` can pass them up. These definitions also used in building project itself.
 
     ```
     EXPORT_DEFINITIONS += USE_OPTION
