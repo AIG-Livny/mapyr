@@ -658,10 +658,10 @@ class Project:
             result = TargetContainer()
             for prj in p.subprojects:
                 targs = _get_targets(prj)
-                if not group in prj.config.GROUPS:
-                    continue
-                result.add_from_container(targs)
-            
+                for t in targs.targets:
+                    if group in t.parent.config.GROUPS:
+                        result.add(t)
+                
             if group in p.config.GROUPS:
                 result.add_from_container(p.targets)
             return result
