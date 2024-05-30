@@ -506,7 +506,7 @@ class Project:
             parents = self.find_targets_contains_prerequisite(target)
             for par in parents:
                 par.need_build = True
-                _set_parents_need_build(par.path)
+                _set_parents_need_build(par)
 
         # check if children rebuilds, so parents need rebuild too
         for target in self.targets_recursive.targets:
