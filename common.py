@@ -224,7 +224,7 @@ class Target:
 
                 if code == 0:
                     new_size=os.stat(self.path).st_size
-                    app_logger.info(f'{self.path} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
+                    app_logger.info(f'{os.path.relpath(self.path)} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
 
                 return code            
         return self.get_cmd().run()
