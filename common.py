@@ -574,6 +574,14 @@ class Project:
         if not self.config.EXPORT_INCLUDE_DIRS:
             self.config.EXPORT_INCLUDE_DIRS = self.config.INCLUDE_DIRS
 
+        # Set absolute paths
+        def _set_abs(l:list[str]):
+            for i in range(len(l)):
+                l[i] = os.path.abspath(l[i])
+        
+        _set_abs(self.config.INCLUDE_DIRS)
+        _set_abs(self.config.EXPORT_INCLUDE_DIRS)
+
         # Looking for sources, exclude specified source files
         self.config.SOURCES += find_files(self.config.SRC_DIRS, self.config.SRC_EXTS)
         self.config.EXCLUDE_SOURCES = [os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES]
