@@ -183,8 +183,11 @@ class Target:
             cmd = [p.config.AR]+[''.join(p.config.AR_FLAGS)]+[self.path]+obj
             return Command(self, cmd, Command.mfLinkStatic)
         
-        def _cmd_build_c(source) -> Command:
-            # prepare flags
+        def _cmd_build_c(source:str) -> Command:
+            # mapyr special flags
+            p.config.CFLAGS.append(f'-D__MAPYR__FILENAME__="{os.path.basename(source)}"')
+
+            # flags
             p.config.CFLAGS.extend([f"-D{x}" for x in p.config.PRIVATE_DEFINITIONS])
             p.config.CFLAGS.extend([f"-D{x}" for x in p.config.DEFINITIONS])
             p.config.INCLUDE_FLAGS.extend([f"-I{x}" for x in p.config.INCLUDE_DIRS])
