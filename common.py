@@ -211,6 +211,7 @@ class Target:
                         case '.c' | '.cc' | '.cpp': return _cmd_build_c(prq.path)
  
         app_logger.error(f"{color_text(91,'Not found cmd builder for')}: {os.path.relpath(self.path)}")
+        exit()
 
     def build(self) -> int:
         '''
