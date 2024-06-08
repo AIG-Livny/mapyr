@@ -175,7 +175,7 @@ class Target:
             p.config.LIBS_FLAGS = unique_list(p.config.LIBS_FLAGS)
 
             obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
-            cmd = [p.config.COMPILER]+p.config.LIB_DIRS_FLAGS+obj+['-o',self.path]+p.config.LIBS_FLAGS
+            cmd = [p.config.COMPILER]+p.config.LINK_EXE_FLAGS+p.config.LIB_DIRS_FLAGS+obj+['-o',self.path]+p.config.LIBS_FLAGS
             return Command(self, cmd, Command.mfLinkExe)
 
         def _cmd_link_static() -> Command:
@@ -342,6 +342,11 @@ class ProjectConfig:
         self.CFLAGS : list[str] = ["-O3"]
         '''
             Compile flags
+        '''
+        
+        self.LINK_EXE_FLAGS : list[str] = []
+        '''
+            Flags used while executable linking
         '''
 
         self.SUBPROJECTS : list[str] = []
