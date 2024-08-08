@@ -54,20 +54,30 @@ else:
 #----------------------LOGGING-------------------------
 
 #----------------------UTILS---------------------------
-def find_files(dirs:list[str], exts:list[str]) -> list[str]:
+def find_files(dirs:list[str], exts:list[str], recursive=False) -> list[str]:
     '''
         Search files with extensions listed in `exts` 
-        in directories listed in `dirs` not recursive
+        in directories listed in `dirs`
     '''
     result = []
-    for dir in dirs:
-        if not os.path.exists(dir):
-            continue
-        for file in os.listdir(dir):
+    
+    def _check(dir, files):
+        for file in files:
             filepath = f'{dir}/{file}'
             if os.path.isfile(filepath):
                 if os.path.splitext(file)[1] in exts:
                     result.append(os.path.abspath(filepath))
+    
+    for dir in dirs:
+        if not os.path.exists(dir):
+            continue
+
+        if recursive:
+            for root, subdirs, files in os.walk(dir):
+                _check(root, files)
+        else:
+            _check(dir,os.listdir(dir))
+
     return result
 
 def sh(cmd: list[str]) -> int:
@@ -593,6 +603,7 @@ class Project:
 
         # Looking for sources, exclude specified source files
         self.config.SOURCES += find_files(self.config.SRC_DIRS, self.config.SRC_EXTS)
+        self.config.SOURCES += find_files(self.config.SRC_RECURSIVE_DIRS, self.config.SRC_EXTS, recursive=True)
         self.config.EXCLUDE_SOURCES = [os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES]
         self.config.SOURCES = [x for x in self.config.SOURCES if x not in self.config.EXCLUDE_SOURCES]
         
