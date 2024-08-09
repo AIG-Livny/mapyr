@@ -198,8 +198,8 @@ class Target:
             p.config.CFLAGS.append(f'-D__MAPYR__FILENAME__="{os.path.basename(source)}"')
 
             # flags
-            p.config.CFLAGS.extend([f"-D{x}" for x in p.config.PRIVATE_DEFINITIONS])
-            p.config.CFLAGS.extend([f"-D{x}" for x in p.config.DEFINITIONS])
+            p.config.CFLAGS.extend([f"-D{x}" for x in p.config.PRIVATE_DEFINES])
+            p.config.CFLAGS.extend([f"-D{x}" for x in p.config.DEFINES])
             p.config.INCLUDE_FLAGS.extend([f"-I{x}" for x in p.config.INCLUDE_DIRS])
             p.config.CFLAGS = unique_list(p.config.CFLAGS)
             p.config.INCLUDE_FLAGS = unique_list(p.config.INCLUDE_FLAGS)
@@ -410,19 +410,19 @@ class ProjectConfig:
             Add path to source in relative or absolute format
         '''
 
-        self.PRIVATE_DEFINITIONS : list[str] = []
+        self.PRIVATE_DEFINES : list[str] = []
         '''
-            Private definitions, that will be used only in this project
-        '''
-        
-        self.DEFINITIONS : list[str] = []
-        '''
-            Definitions used in this project and all its children
+            Private defines, that will be used only in this project
         '''
         
-        self.EXPORT_DEFINITIONS : list[str] = []
+        self.DEFINES : list[str] = []
         '''
-            Definitions that used in the project and also will be passed to parent project
+            Defines used in this project and all its children
+        '''
+        
+        self.EXPORT_DEFINES : list[str] = []
+        '''
+            Defines that used in the project and also will be passed to parent project
         '''
         
         self.MAX_THREADS_NUM : int = 10
@@ -645,14 +645,14 @@ class Project:
             self.main_target.prerequisites.append(sp.main_target)
             fname = os.path.basename(sp.config.OUT_FILE)
             
-            # Pass export definitions up
-            self.config.EXPORT_DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
+            # Pass export defines up
+            self.config.EXPORT_DEFINES.extend(sp.config.EXPORT_DEFINES)
             
-            # Accept exported definitions 
-            self.config.PRIVATE_DEFINITIONS.extend(sp.config.EXPORT_DEFINITIONS)
+            # Accept exported defines 
+            self.config.PRIVATE_DEFINES.extend(sp.config.EXPORT_DEFINES)
             
-            # Pass definitions to children
-            sp.config.DEFINITIONS.extend(self.config.DEFINITIONS)
+            # Pass defines to children
+            sp.config.DEFINES.extend(self.config.DEFINES)
 
             self.config.LIBS.extend(sp.config.LIBS)
             self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
