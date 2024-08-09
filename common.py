@@ -593,6 +593,9 @@ class Project:
         if not self.config.EXPORT_INCLUDE_DIRS:
             self.config.EXPORT_INCLUDE_DIRS = self.config.INCLUDE_DIRS
 
+        # Add exporting defines to defines
+        self.config.DEFINES.extend(self.config.EXPORT_DEFINES)
+
         # Set absolute paths
         def _set_abs(l:list[str]):
             for i in range(len(l)):
