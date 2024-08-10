@@ -710,13 +710,14 @@ class Project:
             sp_abs = os.path.abspath(sp)
             self.tmp_config = None
             try:
+                orig_dir = os.getcwd()
+                os.chdir(sp_abs)
+                
                 with open(sp_abs+"/"+"Mapyrfile") as f:
                     exec(f.read()+'\nself.tmp_config = config()',None,{'self':self})
                 if self.tmp_config is None:
                     RuntimeError('config load failed!')
                 
-                orig_dir = os.getcwd()
-                os.chdir(sp_abs)
                 subprojects = [Project(x) for x in self.tmp_config]
                 for p in subprojects:
                     p.load()
