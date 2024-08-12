@@ -5,7 +5,157 @@ import subprocess
 import concurrent.futures
 import logging
 
-VERSION = '0.4'
+VERSION = '0.4.1'
+
+#----------------------PROJECT CONFIG------------------
+
+class ProjectConfig:
+    def __init__(self) -> None:
+        self.OUT_FILE : str = ""
+        '''
+            Name of out file. Name and extension defines type of file:
+                - executable: without extension or `.exe`
+                - static library:	`lib%.a`
+                - dynamic library:	`%.dll` or `%.so` 
+        '''
+        
+        self.GROUPS : list[str] = ['DEBUG']
+        '''
+            A project can belong to several groups. Default group is DEBUG
+            When build.py started without arguments, it runs build DEBUG group
+        '''
+
+        self.COMPILER : str = "clang"
+        '''
+            Compiler, global variable, come from main project
+        '''
+
+        self.OBJ_PATH : str = "obj"
+        '''
+            Path where store object files
+        '''
+
+        self.AR : str = "ar"
+        '''
+            Archiver
+        '''
+
+        self.SRC_EXTS : list[str] = [".cpp",".c"]
+        '''
+            Source extensions for search
+        '''
+
+        self.SRC_DIRS : list[str] = ["src"]
+        '''
+            Source directories for NOT recursive search
+        '''
+
+        self.SRC_RECURSIVE_DIRS : list[str] = []
+        '''
+            Source directories for recursive search
+        '''
+        
+        self.INCLUDE_DIRS : list[str] = []
+        '''
+            Private include directories
+        '''
+        
+        self.EXPORT_INCLUDE_DIRS : list[str] = []
+        '''
+            Include directories that also will be sended to parent project
+            and parent will include them while his building process 
+        '''
+        
+        self.AR_FLAGS : list[str] = ["r","c","s"]
+        '''
+            Archiver flags 
+        '''
+
+        self.CFLAGS : list[str] = ["-O3"]
+        '''
+            Compile flags
+        '''
+        
+        self.LINK_EXE_FLAGS : list[str] = []
+        '''
+            Flags used while executable linking
+        '''
+
+        self.SUBPROJECTS : list[str] = []
+        '''
+            Paths to directories contains build.py
+            If subproject is library, it will 
+            auto-included as library in the project.
+        '''
+        
+        self.LIB_DIRS : list[str] = []
+        '''
+            Directories where looking for libraries
+        '''
+
+        self.LIBS : list[str] = []
+        '''
+            List of libraries
+        '''
+        
+        self.INCLUDE_FLAGS : list[str] = []
+        '''
+            Flags that will passed to compiler in the include part of command.
+            This is automatic variable, but you can add any flag if it needed
+        '''
+        
+        self.LIB_DIRS_FLAGS : list[str] = []
+        '''
+            Flags that will passed to linker in library directories part of command.
+            This is automatic variable, but you can add any flag it if needed
+        '''
+       
+        self.LIBS_FLAGS : list[str] = []
+        '''
+            Flags that will passed to linker in library part of command.
+            This is automatic variable, but you can add any flag it if needed
+        '''
+
+        self.PKG_SEARCH : list[str] = []
+        '''
+            If `pkg-config` installed in system then this libraries 
+            will be auto included in project 
+        '''
+
+        self.SOURCES : list[str] = []
+        '''
+            Particular source files. 
+            This is automatic variable, but you can add any flag if needed
+        '''
+
+        self.EXCLUDE_SOURCES : list[str] = []
+        '''
+            Sometimes need to exclude a specific source file from auto search
+            Add path to source in relative or absolute format
+        '''
+
+        self.PRIVATE_DEFINES : list[str] = []
+        '''
+            Private defines, that will be used only in this project
+        '''
+        
+        self.DEFINES : list[str] = []
+        '''
+            Defines used in this project and all its children
+        '''
+        
+        self.EXPORT_DEFINES : list[str] = []
+        '''
+            Defines that used in the project and also 
+            will be passed to parent project
+        '''
+        
+        self.MAX_THREADS_NUM : int = 10
+        '''
+            Build threads limit
+        '''
+
+#----------------------END PROJECT CONFIG--------------
 
 #----------------------EXCEPTIONS----------------------
 class Exceptions:
@@ -289,146 +439,6 @@ class TargetContainer:
 #----------------------END TARGET CONTAINER------------
 
 #----------------------PROJECT-------------------------
-class ProjectConfig:
-    def __init__(self) -> None:
-        self.OUT_FILE : str = ""
-        '''
-            Path and name of output file. 
-            This defines build type: exe, static, shared or other... 
-        '''
-        
-        self.GROUPS : list[str] = ['DEBUG']
-        '''
-            A project can belong to several groups. Default group is DEBUG
-            When Mapyrfile started without arguments, it runs build DEBUG group
-        '''
-
-        self.COMPILER : str = "clang"
-        '''
-            Compiler command 
-        '''
-
-        self.OBJ_PATH               : str = "obj"
-        '''
-            Path where object files will be
-        '''
-
-        self.AR                     : str = "ar"
-        '''
-            Archiver command
-        '''
-
-        self.SRC_EXTS               : list[str] = [".cpp",".c"]
-        '''
-            Source extensions for search them in `SRC_DIRS`
-        '''
-
-        self.SRC_DIRS               : list[str] = ["src"]
-        '''
-            Source directories for NOT recursive search
-        '''
-
-        self.SRC_RECURSIVE_DIRS     : list[str] = []
-        '''
-            Source directories for recursive search
-        '''
-        
-        self.INCLUDE_DIRS           : list[str] = []
-        '''
-            Private include directories
-        '''
-        
-        self.EXPORT_INCLUDE_DIRS    : list[str] = []
-        '''
-            Include directories that also will be sended to parent project
-            and parent will include them while his building process 
-        '''
-        
-        self.AR_FLAGS               : list[str] = ["r","c","s"]
-        '''
-            Archiver flags 
-        '''
-
-        self.CFLAGS : list[str] = ["-O3"]
-        '''
-            Compile flags
-        '''
-        
-        self.LINK_EXE_FLAGS : list[str] = []
-        '''
-            Flags used while executable linking
-        '''
-
-        self.SUBPROJECTS : list[str] = []
-        '''
-            Paths to directories contains Mapyrfile.
-            If subproject is library, it will automatic included as library in the project.
-        '''
-        
-        self.LIB_DIRS : list[str] = []
-        '''
-            Directories where looking for libraries
-        '''
-
-        self.LIBS : list[str] = []
-        '''
-            List of libraries
-        '''
-        
-        self.INCLUDE_FLAGS : list[str] = []
-        '''
-            Flags that will passed to compiler in include part of command.
-            This is automatic variable, but you can add any flag if needed
-        '''
-        
-        self.LIB_DIRS_FLAGS : list[str] = []
-        '''
-            Flags that will passed to linker in library directories part of command.
-            This is automatic variable, but you can add any flag if needed
-        '''
-       
-        self.LIBS_FLAGS : list[str] = []
-        '''
-            Flags that will passed to linker in library part of command.
-            This is automatic variable, but you can add any flag if needed
-        '''
-
-        self.PKG_SEARCH : list[str] = []
-        '''
-            If `pkg-config` installed in system, so this libraries will be auto included in project 
-        '''
-
-        self.SOURCES : list[str] = []
-        '''
-            Particular source files. 
-            This is automatic variable, but you can add any flag if needed
-        '''
-
-        self.EXCLUDE_SOURCES : list[str] = []
-        '''
-            Sometimes need to exclude specific source file from auto search
-            Add path to source in relative or absolute format
-        '''
-
-        self.PRIVATE_DEFINES : list[str] = []
-        '''
-            Private defines, that will be used only in this project
-        '''
-        
-        self.DEFINES : list[str] = []
-        '''
-            Defines used in this project and all its children
-        '''
-        
-        self.EXPORT_DEFINES : list[str] = []
-        '''
-            Defines that used in the project and also will be passed to parent project
-        '''
-        
-        self.MAX_THREADS_NUM : int = 10
-        '''
-            Build threads limit
-        '''
 
 class Project:
     '''
@@ -702,7 +712,7 @@ class Project:
     def load_subprojects(self):
         '''
             We are loading the subproject data by executing `config` function 
-            inside `Mapyrfile`
+            inside `build.py`
         '''
         self.subprojects = []
         
@@ -713,7 +723,7 @@ class Project:
                 orig_dir = os.getcwd()
                 os.chdir(sp_abs)
                 
-                with open(sp_abs+"/"+"Mapyrfile") as f:
+                with open(sp_abs+"/"+"build.py") as f:
                     exec(f.read()+'\nself.tmp_config = config()',None,{'self':self})
                 if self.tmp_config is None:
                     RuntimeError('config load failed!')
@@ -790,7 +800,7 @@ class Project:
     
 #----------------------END PROJECT---------------------
     
-def process(pc:list[ProjectConfig]):
+def process(pc:list[ProjectConfig], required_version = '0.4.1'):
     os.chdir(os.path.dirname(sys.argv[0]))
     group = 'DEBUG'
     cmd = 'build'

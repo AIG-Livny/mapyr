@@ -1,4 +1,4 @@
-# Mapyr v.0.4
+# Mapyr v.0.4.1
 
 Mapyr - is python build system GCC/clang oriented. 
 
@@ -7,9 +7,11 @@ For simple and complex projects with subprojects in it.
 There is relate project for GNU Make `Mapr` https://github.com/AIG-Livny/mapr.git
 
 # Quick start
-Create `src/main.c` and `Mapyrfile` with this content and run `./Mapyrfile`
+Create `src/main.c` and `build.py` with content:
 ```py
 #!/usr/bin/python3
+REQUIRED_VERSION = '0.4.1'
+
 def config() -> list["ProjectConfig"]:
     result = []
     p = ProjectConfig()
@@ -23,16 +25,14 @@ def config() -> list["ProjectConfig"]:
 # https://github.com/AIG-Livny/mapyr.git
 if __name__ == "__main__": 
     try:
-        from mapyr.common import *
+        import mapyr
     except:
-        import requests
-        import os
-        r = requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/common.py')
+        import requests, os
         os.makedirs('mapyr',exist_ok=True)
-        with open('mapyr/common.py','+w') as f:
-            f.write(r.text)
-        from mapyr.common import *
-    process(config()) 
+        with open('mapyr/__init__.py','+w') as f:
+            f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
+        import mapyr
+    mapyr.process(config(), REQUIRED_VERSION)
 ```
 # Commands
 - `build [group]` - build projects in group. Default group is 'DEBUG'
@@ -43,70 +43,61 @@ if __name__ == "__main__":
 # Variables list
 Almost all variables is optional, except `OUT_FILE`. In brackets default value if exists.
 
-- `OUT_FILE` - name of out file. Name and extension defines type of file:
- 	- executable: without extension or `.exe`
-	- static library:	`lib%.a`
-	- dynamic library:	`%.dll` or `%.so`
+[//]: <start_of_varlist>
 
-- `GROUPS` - A project can belong to several groups. Default group is DEBUG When Mapyrfile started without arguments, it runs build DEBUG group 
+- `OUT_FILE` - (str:"") - Name of out file. Name and extension defines type of file:    - executable: without extension or `.exe`    - static library:	`lib%.a`    - dynamic library:	`%.dll` or `%.so`
 
-- `PKG_SEARCH` - libraries to search in `pkg-config` and add flags 
+- `GROUPS` - (list[str]:['DEBUG']) - A project can belong to several groups. Default group is DEBUGWhen build.py started without arguments, it runs build DEBUG group
 
-- `COMPILER` - (g++) - compiler, global variable, come from main project
+- `COMPILER` - (str:"clang") - Compiler, global variable, come from main project
 
-- `LOCAL_COMPILER` - (COMPILER) - be used if present ignoring COMPILER var. 
+- `OBJ_PATH` - (str:"obj") - Path where store object files
 
-- `SUBPROJECTS` - list of directories where subprojects's `Makefile`'s contains. Example:
-    ```
-    SUBPROJECTS += lib/somesublib
-    SUBPROJECTS += lib/anothersublib
-    ```
-    All subprojects recieves command via `subprojects.` prefix.
-    ```
-    make subprojects.all
-    make subprojects.clean
-    ```
-    Will pass `all` and `clean` commands.
+- `AR` - (str:"ar") - Archiver
 
-- `SRC_DIRS` - (src) - list directories where looking for sources 
+- `SRC_EXTS` - (list[str]:[".cpp",".c"]) - Source extensions for search
 
-- `SRC_RECURSIVE_DIRS` - list directories where starts recursive search of sources
+- `SRC_DIRS` - (list[str]:["src"]) - Source directories for NOT recursive search
 
-- `SRC_EXTS` - (*.cpp *.c) - source extensions
+- `SRC_RECURSIVE_DIRS` - (list[str]:[]) - Source directories for recursive search
 
-- `INCLUDE_DIRS` - (SRC_DIRS) - list directories where looking for headers
+- `INCLUDE_DIRS` - (list[str]:[]) - Private include directories
 
-- `EXPORT_INCLUDE_DIRS` - (INCLUDE_DIRS) - if specified upper project will get only these directories automatically. This variable is for dividing private and public includes.
+- `EXPORT_INCLUDE_DIRS` - (list[str]:[]) - Include directories that also will be sended to parent projectand parent will include them while his building process
 
-- `PRIVATE_DEFINES` - defines used only in this project
+- `AR_FLAGS` - (list[str]:["r","c","s"]) - Archiver flags
 
-- `DEFINES` - defines used in this project and all children recursive
+- `CFLAGS` - (list[str]:["-O3"]) - Compile flags
 
-- `EXPORT_DEFINES` - list of defines that will be sended to upper project. In example: you have a library with `#ifdef` statements, you configure and build library as independent project. When upper project will include `.h`, he will not to know about any defines that was used during building library, so `EXPORT_DEFINES` can pass them up. These defines also used in building project itself.
+- `LINK_EXE_FLAGS` - (list[str]:[]) - Flags used while executable linking
 
-    ```
-    EXPORT_DEFINES += USE_OPTION
-    ```
+- `SUBPROJECTS` - (list[str]:[]) - Paths to directories contains build.pyIf subproject is library, it will auto-included as library in the project.
 
-- `LIB_DIRS` - list directories where looking for libraries
+- `LIB_DIRS` - (list[str]:[]) - Directories where looking for libraries
 
-- `OBJ_PATH` - (obj) - where to store object files.
+- `LIBS` - (list[str]:[]) - List of libraries
 
-- `LINK_FLAGS` - link stage flags
+- `INCLUDE_FLAGS` - (list[str]:[]) - Flags that will passed to compiler in the include part of command.This is automatic variable, but you can add any flag if it needed
 
-- `CFLAGS` - (-O3) - compile stage flags. It is global variable that be passed to subprojects and rewrite local `CFLAGS` variable. To use private flags see `LOCAL_CFLAGS`
+- `LIB_DIRS_FLAGS` - (list[str]:[]) - Flags that will passed to linker in library directories part of command.This is automatic variable, but you can add any flag it if needed
 
-- `LOCAL_CFLAGS` - compile stage flags. These flags affects on only local project and not will passed into subprojects.
+- `LIBS_FLAGS` - (list[str]:[]) - Flags that will passed to linker in library part of command.This is automatic variable, but you can add any flag it if needed
 
-- `SOURCES` - list of source files. Can be used to specify files that can not be found by recursive search. In example: sertain source file from other project, without any excess sources.
+- `PKG_SEARCH` - (list[str]:[]) - If `pkg-config` installed in system then this libraries will be auto included in project
 
-- `LIBS` - list of libraries to link.
+- `SOURCES` - (list[str]:[]) - Particular source files. This is automatic variable, but you can add any flag if needed
 
-- `AR` - archiver
+- `EXCLUDE_SOURCES` - (list[str]:[]) - Sometimes need to exclude a specific source file from auto searchAdd path to source in relative or absolute format
 
-- `AR_FLAGS` - archivier flags
+- `PRIVATE_DEFINES` - (list[str]:[]) - Private defines, that will be used only in this project
 
-- `EXCLUDE_SOURCES` - list of sources exclusions
+- `DEFINES` - (list[str]:[]) - Defines used in this project and all its children
+
+- `EXPORT_DEFINES` - (list[str]:[]) - Defines that used in the project and also will be passed to parent project
+
+- `MAX_THREADS_NUM` - (int:10) - Build threads limit
+
+[//]: <end_of_varlist>
 
 # Third-party libraries
 Any third-party library can be placed into subdirectory, it doesn't change original files and thus replaces its build system.
@@ -119,7 +110,7 @@ ___lib
        |___bin
        |   |___binary of lib, builded by mapr
        |
-       |___Mapyrfile
+       |___build.py
 ``` 
 or even:
 ```
@@ -132,13 +123,15 @@ ___lib
        |___bin
        |   |___binary of lib, builded by mapr
        |
-       |___Mapyrfile
+       |___build.py
 ```
 
 # Mapyr example
 
 ```py
 #!/usr/bin/python3
+REQUIRED_VERSION = '0.4.1'
+
 def config() -> list["ProjectConfig"]:
     result = []
     p = ProjectConfig()
@@ -167,14 +160,12 @@ def config() -> list["ProjectConfig"]:
 # https://github.com/AIG-Livny/mapyr.git
 if __name__ == "__main__": 
     try:
-        from mapyr.common import *
+        import mapyr
     except:
-        import requests
-        import os
-        r = requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/common.py')
+        import requests, os
         os.makedirs('mapyr',exist_ok=True)
-        with open('mapyr/common.py','+w') as f:
-            f.write(r.text)
-        from mapyr.common import *
-    process(config())
+        with open('mapyr/__init__.py','+w') as f:
+            f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
+        import mapyr
+    mapyr.process(config(), REQUIRED_VERSION)
 ```
