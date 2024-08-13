@@ -25,14 +25,14 @@ def config() -> list["ProjectConfig"]:
 # https://github.com/AIG-Livny/mapyr.git
 if __name__ == "__main__": 
     try:
-        import mapyr
+        from mapyr import *
     except:
         import requests, os
-        os.makedirs('mapyr',exist_ok=True)
-        with open('mapyr/__init__.py','+w') as f:
+        os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
+        with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
             f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
-        import mapyr
-    mapyr.process(config(), REQUIRED_VERSION)
+        from mapyr import *
+    process(config(), REQUIRED_VERSION)
 ```
 # Commands
 - `build [group]` - build projects in group. Default group is 'DEBUG'
@@ -160,12 +160,12 @@ def config() -> list["ProjectConfig"]:
 # https://github.com/AIG-Livny/mapyr.git
 if __name__ == "__main__": 
     try:
-        import mapyr
+        from mapyr import *
     except:
         import requests, os
-        os.makedirs('mapyr',exist_ok=True)
-        with open('mapyr/__init__.py','+w') as f:
+        os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
+        with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
             f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
-        import mapyr
-    mapyr.process(config(), REQUIRED_VERSION)
+        from mapyr import *
+    process(config(), REQUIRED_VERSION)
 ```
