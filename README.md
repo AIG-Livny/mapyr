@@ -1,4 +1,4 @@
-# Mapyr v.0.4.1
+# Mapyr v.0.4.2
 
 Mapyr - is python build system GCC/clang oriented. 
 
@@ -10,11 +10,11 @@ There is relate project for GNU Make `Mapr` https://github.com/AIG-Livny/mapr.gi
 Create `src/main.c` and `build.py` with content:
 ```py
 #!/usr/bin/python3
-REQUIRED_VERSION = '0.4.1'
+REQUIRED_VERSION = '0.4.2'
 
-def config() -> list["ProjectConfig"]:
+def config() -> list["mapyr.ProjectConfig"]:
     result = []
-    p = ProjectConfig()
+    p = mapyr.ProjectConfig()
 
     p.OUT_FILE = "bin/cloed"
 
@@ -25,14 +25,14 @@ def config() -> list["ProjectConfig"]:
 # https://github.com/AIG-Livny/mapyr.git
 if __name__ == "__main__": 
     try:
-        from mapyr import *
+        import mapyr
     except:
         import requests, os
         os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
         with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
             f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
-        from mapyr import *
-    process(config(), REQUIRED_VERSION)
+        import mapyr
+    mapyr.process(config(), REQUIRED_VERSION)
 ```
 # Commands
 - `build [group]` - build projects in group. Default group is 'DEBUG'
@@ -41,6 +41,12 @@ if __name__ == "__main__":
 - `run` - execute output file of first project
 
 # Variables list
+
+## of macro in C code 
+
+- `__MAPYR__FILENAME__` - filename of current source file
+
+## of ProjectConfig
 Almost all variables is optional, except `OUT_FILE`. In brackets default value if exists.
 
 [//]: <start_of_varlist>
@@ -130,11 +136,11 @@ ___lib
 
 ```py
 #!/usr/bin/python3
-REQUIRED_VERSION = '0.4.1'
+REQUIRED_VERSION = '0.4.2'
 
-def config() -> list["ProjectConfig"]:
+def config() -> list["mapyr.ProjectConfig"]:
     result = []
-    p = ProjectConfig()
+    p = mapyr.ProjectConfig()
 
     p.OUT_FILE = "bin/cloed"
 
@@ -160,12 +166,12 @@ def config() -> list["ProjectConfig"]:
 # https://github.com/AIG-Livny/mapyr.git
 if __name__ == "__main__": 
     try:
-        from mapyr import *
+        import mapyr
     except:
         import requests, os
         os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
         with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
             f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
-        from mapyr import *
-    process(config(), REQUIRED_VERSION)
+        import mapyr
+    mapyr.process(config(), REQUIRED_VERSION)
 ```

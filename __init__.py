@@ -5,7 +5,7 @@ import subprocess
 import concurrent.futures
 import logging
 
-VERSION = '0.4.1'
+VERSION = '0.4.2'
 
 #----------------------PROJECT CONFIG------------------
 
@@ -619,7 +619,8 @@ class Project:
         self.config.SOURCES += find_files(self.config.SRC_RECURSIVE_DIRS, self.config.SRC_EXTS, recursive=True)
         self.config.EXCLUDE_SOURCES = [os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES]
         self.config.SOURCES = [x for x in self.config.SOURCES if x not in self.config.EXCLUDE_SOURCES]
-        
+        self.config.LIB_DIRS = [os.path.abspath(x) for x in self.config.LIB_DIRS]
+
         '''
             Create targets from sources.
             All object files must be in OBJ directory
@@ -724,7 +725,14 @@ class Project:
                 os.chdir(sp_abs)
                 
                 with open(sp_abs+"/"+"build.py") as f:
-                    exec(f.read()+'\nself.tmp_config = config()',None,{'self':self})
+                    exec(f.read()+'\nself.tmp_config = config()',
+                        {
+                            '__file__':f'{sp_abs}/build.py',
+                            'mapyr':sys.modules[__name__],
+                        },
+                        { 
+                            'self':self, 
+                        })
                 if self.tmp_config is None:
                     RuntimeError('config load failed!')
                 
