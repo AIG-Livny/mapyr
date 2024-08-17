@@ -668,6 +668,8 @@ class Project:
             self.config.LIBS.extend(sp.config.LIBS)
             self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
             
+            self.config.PKG_SEARCH.extend(sp.config.PKG_SEARCH)
+            
             # Libraries
             if fname.startswith('lib') and fname.endswith('.a'):
                 lib = fname[3:-2]
@@ -678,6 +680,7 @@ class Project:
             os.chdir(self.cwd)
 
         # Load libs data from pkg-config
+        unique_list(self.config.PKG_SEARCH)
         if self.config.PKG_SEARCH:
             out = sh_capture(["pkg-config","--cflags","--libs"]+list(self.config.PKG_SEARCH))
             if not out.startswith('-'):
