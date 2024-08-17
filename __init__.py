@@ -809,7 +809,7 @@ class Project:
 #----------------------END PROJECT---------------------
     
 def process(pc:list[ProjectConfig], required_version = '0.4.1'):
-    os.chdir(os.path.dirname(sys.argv[0]))
+    os.chdir(os.path.dirname(os.path.realpath(sys.argv[0])))
     group = 'DEBUG'
     cmd = 'build'
     if len(sys.argv)>1:
