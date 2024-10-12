@@ -5,6 +5,7 @@ import subprocess
 import concurrent.futures
 import logging
 import json
+import copy
 
 VERSION = '0.4.3'
 
@@ -17,9 +18,9 @@ class ProjectConfig:
             Name of out file. Name and extension defines type of file:
                 - executable: without extension or `.exe`
                 - static library:	`lib%.a`
-                - dynamic library:	`%.dll` or `%.so` 
+                - dynamic library:	`%.dll` or `%.so`
         '''
-        
+
         self.GROUPS : list[str] = ['DEBUG']
         '''
             A project can belong to several groups. Default group is DEBUG
@@ -55,28 +56,28 @@ class ProjectConfig:
         '''
             Source directories for recursive search
         '''
-        
+
         self.INCLUDE_DIRS : list[str] = []
         '''
             Private include directories
         '''
-        
+
         self.EXPORT_INCLUDE_DIRS : list[str] = []
         '''
             Include directories that also will be sended to parent project
-            and parent will include them while his building process 
+            and parent will include them while his building process
         '''
-        
+
         self.AR_FLAGS : list[str] = ["r","c","s"]
         '''
-            Archiver flags 
+            Archiver flags
         '''
 
         self.CFLAGS : list[str] = ["-O3"]
         '''
             Compile flags
         '''
-        
+
         self.LINK_EXE_FLAGS : list[str] = []
         '''
             Flags used while executable linking
@@ -85,10 +86,10 @@ class ProjectConfig:
         self.SUBPROJECTS : list[str] = []
         '''
             Paths to directories contains build.py
-            If subproject is library, it will 
+            If subproject is library, it will
             auto-included as library in the project.
         '''
-        
+
         self.LIB_DIRS : list[str] = []
         '''
             Directories where looking for libraries
@@ -98,19 +99,19 @@ class ProjectConfig:
         '''
             List of libraries
         '''
-        
+
         self.INCLUDE_FLAGS : list[str] = []
         '''
             Flags that will passed to compiler in the include part of command.
             This is automatic variable, but you can add any flag if it needed
         '''
-        
+
         self.LIB_DIRS_FLAGS : list[str] = []
         '''
             Flags that will passed to linker in library directories part of command.
             This is automatic variable, but you can add any flag it if needed
         '''
-       
+
         self.LIBS_FLAGS : list[str] = []
         '''
             Flags that will passed to linker in library part of command.
@@ -119,13 +120,13 @@ class ProjectConfig:
 
         self.PKG_SEARCH : list[str] = []
         '''
-            If `pkg-config` installed in system then this libraries 
-            will be auto included in project 
+            If `pkg-config` installed in system then this libraries
+            will be auto included in project
         '''
 
         self.SOURCES : list[str] = []
         '''
-            Particular source files. 
+            Particular source files.
             This is automatic variable, but you can add any flag if needed
         '''
 
@@ -139,27 +140,30 @@ class ProjectConfig:
         '''
             Private defines, that will be used only in this project
         '''
-        
+
         self.DEFINES : list[str] = []
         '''
             Defines used in this project and all its children
         '''
-        
+
         self.EXPORT_DEFINES : list[str] = []
         '''
-            Defines that used in the project and also 
+            Defines that used in the project and also
             will be passed to parent project
         '''
-        
+
         self.MAX_THREADS_NUM : int = 10
         '''
             Build threads limit
         '''
-        
+
         self.VSCODE_CPPTOOLS_CONFIG : bool = False
         '''
-            Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json) 
+            Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
         '''
+
+    def copy(self) -> "ProjectConfig":
+        return copy.copy(self)
 
 #----------------------END PROJECT CONFIG--------------
 
@@ -167,7 +171,7 @@ class ProjectConfig:
 class Exceptions:
     class CustomException(Exception):
         def __init__(self): super().__init__(self.__doc__)
-    
+
     class CircularDetected(CustomException):
         "Circular dependency detected!"
     class OutFileEmpty(CustomException):
@@ -212,18 +216,18 @@ else:
 #----------------------UTILS---------------------------
 def find_files(dirs:list[str], exts:list[str], recursive=False) -> list[str]:
     '''
-        Search files with extensions listed in `exts` 
+        Search files with extensions listed in `exts`
         in directories listed in `dirs`
     '''
     result = []
-    
+
     def _check(dir, files):
         for file in files:
             filepath = f'{dir}/{file}'
             if os.path.isfile(filepath):
                 if os.path.splitext(file)[1] in exts:
                     result.append(os.path.abspath(filepath))
-    
+
     for dir in dirs:
         if not os.path.exists(dir):
             continue
@@ -300,10 +304,10 @@ class Command:
     mfLinkStatic = f"{color_text(33,'Linking static')}: {{}}"
     mfLinkExe    = f"{color_text(32,'Linking executable')}: {{}}"
     mfBuild      = f"{color_text(94,'Building')}: {{}}"
-    
+
     def __init__(self, parent_target:"Target", cmd:list[str], message_format:str) -> None:
         self.parent_target = parent_target
-        self.cmd = cmd 
+        self.cmd = cmd
         self.message_format = message_format
 
     def run(self, ) -> int:
@@ -328,7 +332,7 @@ class Target:
         self.prerequisites  : list[Target]  = prerequisites
         self.parent         : Project       = parent
         self.need_build     : bool          = need_build
-    
+
     def get_cmd(self) -> Command:
         '''
             Return command to build this target
@@ -348,7 +352,7 @@ class Target:
             obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
             cmd = [p.config.AR]+[''.join(p.config.AR_FLAGS)]+[self.path]+obj
             return Command(self, cmd, Command.mfLinkStatic)
-        
+
         def _cmd_build_c(source:str) -> Command:
             # mapyr special flags
             p.config.CFLAGS.append(f'-D__MAPYR__FILENAME__="{os.path.basename(source)}"')
@@ -371,17 +375,17 @@ class Target:
             case '' | '.exe': return _cmd_link_exe()
             case '.a': return _cmd_link_static()
             case '.o':
-                for prq in self.prerequisites: 
+                for prq in self.prerequisites:
                     ext_prq = os.path.splitext(prq.path)[1]
                     match(ext_prq):
                         case '.c' | '.cc' | '.cpp': return _cmd_build_c(prq.path)
- 
+
         app_logger.error(f"{color_text(91,'Not found cmd builder for')}: {os.path.relpath(self.path)}")
         exit()
 
     def build(self) -> int:
         '''
-            Build target. If it is main target and PRINT_SIZE env present, 
+            Build target. If it is main target and PRINT_SIZE env present,
             so it can print file size difference
         '''
         if os.getenv('PRINT_SIZE'):
@@ -396,9 +400,9 @@ class Target:
                     new_size=os.stat(self.path).st_size
                     app_logger.info(f'{os.path.relpath(self.path)} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
 
-                return code            
+                return code
         return self.get_cmd().run()
-     
+
     def __repr__(self) -> str:
         return f'{self.path}:{self.prerequisites}'
 
@@ -417,7 +421,7 @@ class TargetContainer:
 
         for t in self.targets:
             if path == t.path:
-                return t        
+                return t
         return None
 
     def add(self, t:Target) -> Target:
@@ -434,7 +438,7 @@ class TargetContainer:
         else:
             self.targets.append(t)
             return t
-    
+
     def add_from_container(self, cnt:"TargetContainer"):
         '''
             Add targets from other container
@@ -471,7 +475,7 @@ class Project:
         result = []
         if not os.path.isfile(path):
             return result
-        
+
         with open(path,'r') as f:
             content = f.read()
 
@@ -495,7 +499,7 @@ class Project:
                 if prq:
                     prq_target = self.targets.add(Target(os.path.abspath(prq),[],self))
                     preq.append(prq_target)
-            
+
             self.targets.add(Target(path,preq,self))
 
     def find_targets_contains_prerequisite(self,target:Target) -> list[Target]:
@@ -514,10 +518,10 @@ class Project:
         '''
             Check and set `need_build` variable
         '''
-        
+
         def _need_build(target:Target) -> bool:
             '''
-                If target file not exists or prerequisites files newer than target 
+                If target file not exists or prerequisites files newer than target
             '''
             if not os.path.exists(target.path):
                 return True
@@ -532,7 +536,7 @@ class Project:
                         return True
                 else:
                     return True
-            return False 
+            return False
 
         def _set_parents_need_build(target : Target):
             '''
@@ -564,11 +568,11 @@ class Project:
         for target in torem:
             self.targets_recursive.targets.remove(target)
 
-        def _pop_layer() -> list[Target]:            
+        def _pop_layer() -> list[Target]:
             '''
                 Return targets that can be built right now.
                 If all prerequisites not need to build then we can build this target.
-                So, these targets we can build parallel -> in one layer 
+                So, these targets we can build parallel -> in one layer
             '''
             layer : set[Target] = set()
             for target in self.targets_recursive.targets:
@@ -577,9 +581,9 @@ class Project:
                         break
                 else:
                     layer.add(target)
-             
+
             return list(layer)
-        
+
         result : list[list[Target]] = []
 
         layer = _pop_layer()
@@ -616,7 +620,7 @@ class Project:
         def _set_abs(l:list[str]):
             for i in range(len(l)):
                 l[i] = os.path.abspath(l[i])
-        
+
         _set_abs(self.config.INCLUDE_DIRS)
         _set_abs(self.config.EXPORT_INCLUDE_DIRS)
 
@@ -661,21 +665,21 @@ class Project:
             sp_path = os.path.abspath(sp.config.OUT_FILE)
             self.main_target.prerequisites.append(sp.main_target)
             fname = os.path.basename(sp.config.OUT_FILE)
-            
+
             # Pass export defines up
             self.config.EXPORT_DEFINES.extend(sp.config.EXPORT_DEFINES)
-            
-            # Accept exported defines 
+
+            # Accept exported defines
             self.config.PRIVATE_DEFINES.extend(sp.config.EXPORT_DEFINES)
-            
+
             # Pass defines to children
             sp.config.DEFINES.extend(self.config.DEFINES)
 
             self.config.LIBS.extend(sp.config.LIBS)
             self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
-            
+
             self.config.PKG_SEARCH.extend(sp.config.PKG_SEARCH)
-            
+
             # Libraries
             if fname.startswith('lib') and fname.endswith('.a'):
                 lib = fname[3:-2]
@@ -712,45 +716,45 @@ class Project:
                 for t in targs.targets:
                     if group in t.parent.config.GROUPS:
                         result.add(t)
-                
+
             if group in p.config.GROUPS:
                 result.add_from_container(p.targets)
             return result
-        
+
         self.targets_recursive.add_from_container(_get_targets(self))
 
     def load_subprojects(self):
         '''
-            We are loading the subproject data by executing `config` function 
+            We are loading the subproject data by executing `config` function
             inside `build.py`
         '''
         self.subprojects = []
-        
+
         for sp in self.config.SUBPROJECTS:
             sp_abs = os.path.abspath(sp)
             self.tmp_config = None
             try:
                 orig_dir = os.getcwd()
                 os.chdir(sp_abs)
-                
+
                 with open(sp_abs+"/"+"build.py") as f:
                     exec(f.read()+'\nself.tmp_config = config()',
                         {
                             '__file__':f'{sp_abs}/build.py',
                             'mapyr':sys.modules[__name__],
                         },
-                        { 
-                            'self':self, 
+                        {
+                            'self':self,
                         })
                 if self.tmp_config is None:
                     RuntimeError('config load failed!')
-                
+
                 subprojects = [Project(x) for x in self.tmp_config]
                 for p in subprojects:
                     p.load()
                 os.chdir(orig_dir)
                 self.subprojects.extend(subprojects)
-            
+
             except Exception as e:
                 app_logger.error(color_text(31,f"Subproject {sp}: {e}"))
                 continue
@@ -761,11 +765,11 @@ class Project:
         '''
         self.load()
         layers = self.get_build_layers(group)
-        
+
         if not layers:
             app_logger.info('Nothing to build')
             return True
-    
+
         for layer in layers:
             layer : list[Target]
 
@@ -801,7 +805,7 @@ class Project:
 
         if not group in self.config.GROUPS:
             return
-        
+
         shutil.rmtree(self.config.OBJ_PATH,True)
         dirs = os.path.dirname(self.config.OUT_FILE)
         silentremove(self.config.OUT_FILE)
@@ -814,7 +818,7 @@ class Project:
 
     def __repr__(self) -> str:
         return self.config.OUT_FILE
-    
+
 #----------------------END PROJECT---------------------
 
 def build(pc:list[ProjectConfig],group):
@@ -826,15 +830,15 @@ def build(pc:list[ProjectConfig],group):
         prj.build(group)
         if p.VSCODE_CPPTOOLS_CONFIG:
             vscode_config_need = True
-    
+
     # VSCode c_cpp_properties generating
     if vscode_config_need == False:
         return
-    
+
     vscode_file_path = '.vscode/c_cpp_properties.json'
     if os.path.exists(vscode_file_path):
         import inspect
-        build_py_filename = inspect.stack()[2]. filename 
+        build_py_filename = inspect.stack()[2]. filename
         if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
             return
 
@@ -847,7 +851,7 @@ def build(pc:list[ProjectConfig],group):
                 'defines':p.config.PRIVATE_DEFINES + p.config.DEFINES
             }
             configs.append(config)
-   
+
     if configs:
         main_config = {
             'configurations':configs,
@@ -871,6 +875,6 @@ def process(pc:list[ProjectConfig], required_version = '0.4.1'):
         case 'run':     Project(pc[0]).run()
         case 'build':   build(pc,group)
 
-        case 'clean': 
+        case 'clean':
             for p in pc:
                 Project(p).clean(group)
