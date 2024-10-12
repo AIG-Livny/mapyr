@@ -1,4 +1,4 @@
-# Mapyr v.0.4.2
+# Mapyr v.0.4.3
 
 Mapyr - is python build system GCC/clang oriented. 
 
@@ -103,7 +103,10 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 - `MAX_THREADS_NUM` - (int:10) - Build threads limit
 
+- `VSCODE_CPPTOOLS_CONFIG` - (bool:False) - Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
+
 [//]: <end_of_varlist>
+
 
 # Third-party libraries
 Any third-party library can be placed into subdirectory, it doesn't change original files and thus replaces its build system.

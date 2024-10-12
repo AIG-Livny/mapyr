@@ -4,8 +4,9 @@ import shutil
 import subprocess
 import concurrent.futures
 import logging
+import json
 
-VERSION = '0.4.2'
+VERSION = '0.4.3'
 
 #----------------------PROJECT CONFIG------------------
 
@@ -153,6 +154,11 @@ class ProjectConfig:
         self.MAX_THREADS_NUM : int = 10
         '''
             Build threads limit
+        '''
+        
+        self.VSCODE_CPPTOOLS_CONFIG : bool = False
+        '''
+            Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json) 
         '''
 
 #----------------------END PROJECT CONFIG--------------
@@ -810,7 +816,47 @@ class Project:
         return self.config.OUT_FILE
     
 #----------------------END PROJECT---------------------
+
+def build(pc:list[ProjectConfig],group):
+    vscode_config_need = False
+    projects : list[Project] = []
+    for p in pc:
+        prj = Project(p)
+        projects.append(prj)
+        prj.build(group)
+        if p.VSCODE_CPPTOOLS_CONFIG:
+            vscode_config_need = True
     
+    # VSCode c_cpp_properties generating
+    if vscode_config_need == False:
+        return
+    
+    vscode_file_path = '.vscode/c_cpp_properties.json'
+    if os.path.exists(vscode_file_path):
+        import inspect
+        build_py_filename = inspect.stack()[2]. filename 
+        if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
+            return
+
+    configs = []
+    for p in projects:
+        if p.config.VSCODE_CPPTOOLS_CONFIG:
+            config = {
+                'name':p.config.OUT_FILE,
+                'includePath':p.config.INCLUDE_DIRS,
+                'defines':p.config.PRIVATE_DEFINES + p.config.DEFINES
+            }
+            configs.append(config)
+   
+    if configs:
+        main_config = {
+            'configurations':configs,
+            "version": 4
+        }
+
+        with open('.vscode/c_cpp_properties.json', 'w+') as f:
+            json.dump(main_config, f, indent=4)
+
 def process(pc:list[ProjectConfig], required_version = '0.4.1'):
     os.chdir(os.path.dirname(os.path.realpath(sys.argv[0])))
     group = 'DEBUG'
@@ -823,9 +869,7 @@ def process(pc:list[ProjectConfig], required_version = '0.4.1'):
     match(cmd):
         case 'name':    print(pc[0].OUT_FILE)
         case 'run':     Project(pc[0]).run()
-        case 'build':
-            for p in pc:
-                Project(p).build(group)
+        case 'build':   build(pc,group)
 
         case 'clean': 
             for p in pc:
