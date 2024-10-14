@@ -7,11 +7,15 @@ import logging
 import json
 import copy
 
-VERSION = '0.4.3'
+VERSION = '0.4.4'
 
 #----------------------PROJECT CONFIG------------------
 
 class ProjectConfig:
+    '''
+        This config used for any project. Controls project build process
+    '''
+
     def __init__(self) -> None:
         self.OUT_FILE : str = ""
         '''
@@ -162,10 +166,35 @@ class ProjectConfig:
             Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
         '''
 
+        self.OVERRIDE_CFLAGS : bool = False
+        '''
+            Override CFLAGS in children projects
+        '''
+
     def copy(self) -> "ProjectConfig":
         return copy.copy(self)
 
 #----------------------END PROJECT CONFIG--------------
+
+#----------------------TOOL CONFIG---------------------
+
+class ToolConfig:
+    '''
+        This config used while sertain build.py running. Config controls MAPYR features
+    '''
+
+    def __init__(self) -> None:
+        self.MINIMUM_REQUIRED_VERSION : str = VERSION
+        '''
+            Minimum required version for this config file (build.py)
+        '''
+
+        self.VERBOSITY : str = "INFO"
+        '''
+            Verbosity level for console output. Value can be any from logging module: ['CRITICAL','FATAL','ERROR','WARN','WARNING','INFO','DEBUG','NOTSET']
+        '''
+
+#----------------------END TOOL CONFIG-----------------
 
 #----------------------EXCEPTIONS----------------------
 class Exceptions:
@@ -179,30 +208,33 @@ class Exceptions:
 #----------------------END EXCEPTIONS------------------
 
 #----------------------LOGGING-------------------------
-file_formatter = logging.Formatter('%(asctime)-15s|PID:%(process)-11s|%(levelname)-8s|%(filename)s:%(lineno)s| %(message)s')
-console_formatter = logging.Formatter('[%(levelname)s]: %(message)s')
+app_logger : logging.Logger = None
 
-file_path = f"{os.path.dirname(os.path.realpath(__file__))}/debug.log"
-file_handler = logging.FileHandler(file_path,'w',encoding='utf8')
-file_handler.setFormatter(file_formatter)
+def setup_logger(config: ToolConfig):
+    global app_logger
+    file_formatter = logging.Formatter('%(asctime)-15s|PID:%(process)-11s|%(levelname)-8s|%(filename)s:%(lineno)s| %(message)s')
+    console_formatter = logging.Formatter('[%(levelname)s]: %(message)s')
 
-console_handler = logging.StreamHandler()
-verb = os.getenv('VERBOSITY')
-if verb and verb.isdigit():
-    console_handler.setLevel(int(verb))
-else:
-    console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(console_formatter)
+    file_path = f"{os.path.dirname(os.path.realpath(__file__))}/debug.log"
+    file_handler = logging.FileHandler(file_path,'w',encoding='utf8')
+    file_handler.setFormatter(file_formatter)
 
-rootlog = logging.getLogger()
-rootlog.addHandler(file_handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(config.VERBOSITY)
+    console_handler.setFormatter(console_formatter)
 
-app_logger = logging.getLogger('main')
-app_logger.propagate = False
-app_logger.setLevel(logging.DEBUG)
-app_logger.addHandler(file_handler)
-app_logger.addHandler(console_handler)
+    rootlog = logging.getLogger()
+    rootlog.addHandler(file_handler)
 
+    app_logger = logging.getLogger('main')
+    app_logger.propagate = False
+    app_logger.setLevel(logging.DEBUG)
+    app_logger.addHandler(file_handler)
+    app_logger.addHandler(console_handler)
+
+#----------------------LOGGING-------------------------
+
+#----------------------UTILS---------------------------
 # Color text Win/Lin
 if os.name == 'nt':
     def color_text(color,text):
@@ -211,9 +243,6 @@ else:
     def color_text(color, text):
         return f"\033[{color}m{text}\033[0m"
 
-#----------------------LOGGING-------------------------
-
-#----------------------UTILS---------------------------
 def find_files(dirs:list[str], exts:list[str], recursive=False) -> list[str]:
     '''
         Search files with extensions listed in `exts`
@@ -675,6 +704,10 @@ class Project:
             # Pass defines to children
             sp.config.DEFINES.extend(self.config.DEFINES)
 
+            # Override CFLAGS if set in main target
+            if self.main_target.parent.config.OVERRIDE_CFLAGS:
+                sp.config.CFLAGS = self.main_target.parent.config.CFLAGS
+
             self.config.LIBS.extend(sp.config.LIBS)
             self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
 
@@ -825,6 +858,8 @@ def build(pc:list[ProjectConfig],group):
     vscode_config_need = False
     projects : list[Project] = []
     for p in pc:
+        if group not in p.GROUPS:
+            continue
         prj = Project(p)
         projects.append(prj)
         prj.build(group)
@@ -838,7 +873,7 @@ def build(pc:list[ProjectConfig],group):
     vscode_file_path = '.vscode/c_cpp_properties.json'
     if os.path.exists(vscode_file_path):
         import inspect
-        build_py_filename = inspect.stack()[2]. filename
+        build_py_filename = inspect.stack()[2].filename
         if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
             return
 
@@ -861,8 +896,49 @@ def build(pc:list[ProjectConfig],group):
         with open('.vscode/c_cpp_properties.json', 'w+') as f:
             json.dump(main_config, f, indent=4)
 
-def process(pc:list[ProjectConfig], required_version = '0.4.1'):
-    os.chdir(os.path.dirname(os.path.realpath(sys.argv[0])))
+def process():
+    '''
+        Runs Mapyr.
+        Complicated algorythm for not inflate footer block in build.py
+        and save it untouched from version to version.
+        Loads parent build.py as python code, add injection code and
+        run it again to fetch configs
+   '''
+
+    fetch = '''
+vars.config = config()
+if 'tool_config' in dir():
+    vars.tool_config = tool_config()
+'''
+
+    parent_file = os.path.realpath(sys.argv[0])
+    class _vars:
+        config : list[ProjectConfig] = []
+        tool_config : ToolConfig = ToolConfig()
+    vars = _vars()
+    try:
+        with open(parent_file) as f:
+            exec(f.read()+fetch,
+                {
+                    '__file__':parent_file,
+                    'mapyr':sys.modules[__name__],
+                },
+                {
+                    'vars':vars
+                })
+        if not vars.config:
+            RuntimeError('config load failed!')
+
+    except Exception as e:
+        setup_logger(vars.tool_config)
+        app_logger.error(color_text(31,f"{e}"))
+        return
+
+    setup_logger(vars.tool_config)
+    if vars.tool_config.MINIMUM_REQUIRED_VERSION > VERSION:
+        app_logger.warning(color_text(31,f"Required version {vars.tool_config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!"))
+
+    os.chdir(os.path.dirname(parent_file))
     group = 'DEBUG'
     cmd = 'build'
     if len(sys.argv)>1:
@@ -871,10 +947,11 @@ def process(pc:list[ProjectConfig], required_version = '0.4.1'):
             group = sys.argv[2]
 
     match(cmd):
-        case 'name':    print(pc[0].OUT_FILE)
-        case 'run':     Project(pc[0]).run()
-        case 'build':   build(pc,group)
+        case 'name':    print(vars.config[0].OUT_FILE)
+        case 'run':     Project(vars.config[0]).run()
+        case 'build':   build(vars.config,group)
 
         case 'clean':
-            for p in pc:
+            for p in vars.config:
                 Project(p).clean(group)
+

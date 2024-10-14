@@ -1,8 +1,8 @@
-# Mapyr v.0.4.3
+# Mapyr v.0.4.4
 
-Mapyr - is python build system GCC/clang oriented. 
+Mapyr - is python build system GCC/clang oriented.
 
-For simple and complex projects with subprojects in it. 
+For simple and complex projects with subprojects in it.
 
 There is relate project for GNU Make `Mapr` https://github.com/AIG-Livny/mapr.git
 
@@ -10,7 +10,6 @@ There is relate project for GNU Make `Mapr` https://github.com/AIG-Livny/mapr.gi
 Create `src/main.c` and `build.py` with content:
 ```py
 #!/usr/bin/python3
-REQUIRED_VERSION = '0.4.2'
 
 def config() -> list["mapyr.ProjectConfig"]:
     result = []
@@ -23,7 +22,7 @@ def config() -> list["mapyr.ProjectConfig"]:
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git
-if __name__ == "__main__": 
+if __name__ == "__main__":
     try:
         import mapyr
     except:
@@ -32,7 +31,7 @@ if __name__ == "__main__":
         with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
             f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
         import mapyr
-    mapyr.process(config(), REQUIRED_VERSION)
+    mapyr.process()
 ```
 # Commands
 - `build [group]` - build projects in group. Default group is 'DEBUG'
@@ -42,14 +41,14 @@ if __name__ == "__main__":
 
 # Variables list
 
-## of macro in C code 
+## macro in C code
 
 - `__MAPYR__FILENAME__` - filename of current source file
 
-## of ProjectConfig
+## ProjectConfig
 Almost all variables is optional, except `OUT_FILE`. In brackets default value if exists.
 
-[//]: <start_of_varlist>
+[//]: <start_of_project_config_list>
 
 - `OUT_FILE` - (str:"") - Name of out file. Name and extension defines type of file:    - executable: without extension or `.exe`    - static library:	`lib%.a`    - dynamic library:	`%.dll` or `%.so`
 
@@ -77,7 +76,7 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 - `LINK_EXE_FLAGS` - (list[str]:[]) - Flags used while executable linking
 
-- `SUBPROJECTS` - (list[str]:[]) - Paths to directories contains build.pyIf subproject is library, it will auto-included as library in the project.
+- `SUBPROJECTS` - (list[str]:[]) - Paths to directories contains build.pyIf subproject is library, it willauto-included as library in the project.
 
 - `LIB_DIRS` - (list[str]:[]) - Directories where looking for libraries
 
@@ -89,9 +88,9 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 - `LIBS_FLAGS` - (list[str]:[]) - Flags that will passed to linker in library part of command.This is automatic variable, but you can add any flag it if needed
 
-- `PKG_SEARCH` - (list[str]:[]) - If `pkg-config` installed in system then this libraries will be auto included in project
+- `PKG_SEARCH` - (list[str]:[]) - If `pkg-config` installed in system then this librarieswill be auto included in project
 
-- `SOURCES` - (list[str]:[]) - Particular source files. This is automatic variable, but you can add any flag if needed
+- `SOURCES` - (list[str]:[]) - Particular source files.This is automatic variable, but you can add any flag if needed
 
 - `EXCLUDE_SOURCES` - (list[str]:[]) - Sometimes need to exclude a specific source file from auto searchAdd path to source in relative or absolute format
 
@@ -99,14 +98,25 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 - `DEFINES` - (list[str]:[]) - Defines used in this project and all its children
 
-- `EXPORT_DEFINES` - (list[str]:[]) - Defines that used in the project and also will be passed to parent project
+- `EXPORT_DEFINES` - (list[str]:[]) - Defines that used in the project and alsowill be passed to parent project
 
 - `MAX_THREADS_NUM` - (int:10) - Build threads limit
 
 - `VSCODE_CPPTOOLS_CONFIG` - (bool:False) - Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
 
-[//]: <end_of_varlist>
+- `OVERRIDE_CFLAGS` - (bool:False) - Override CFLAGS in children projects
 
+[//]: <end_of_project_config_list>
+
+## ToolConfig
+
+[//]: <start_of_tool_config_list>
+
+- `MINIMUM_REQUIRED_VERSION` - (str:VERSION) - Minimum required version for this config file (build.py)
+
+- `VERBOSITY` - (str:"INFO") - Verbosity level for console output. Value can be any from logging module: ['CRITICAL','FATAL','ERROR','WARN','WARNING','INFO','DEBUG','NOTSET']
+
+[//]: <end_of_tool_config_list>
 
 # Third-party libraries
 Any third-party library can be placed into subdirectory, it doesn't change original files and thus replaces its build system.
@@ -120,7 +130,7 @@ ___lib
        |   |___binary of lib, builded by mapr
        |
        |___build.py
-``` 
+```
 or even:
 ```
 ___mapyr
@@ -128,7 +138,7 @@ ___lib
    |___third-party
    |   |___somelib  (original lib folder)
    |
-   |___somelib 
+   |___somelib
        |___bin
        |   |___binary of lib, builded by mapr
        |
@@ -139,7 +149,12 @@ ___lib
 
 ```py
 #!/usr/bin/python3
-REQUIRED_VERSION = '0.4.2'
+
+def tool_config() -> "mapyr.ToolConfig":
+    tc = mapyr.ToolConfig()
+    tc.MINIMUM_REQUIRED_VERSION = '0.4.4'
+    tc.VERBOSITY = 'DEBUG'
+    return tc
 
 def config() -> list["mapyr.ProjectConfig"]:
     result = []
@@ -167,7 +182,7 @@ def config() -> list["mapyr.ProjectConfig"]:
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git
-if __name__ == "__main__": 
+if __name__ == "__main__":
     try:
         import mapyr
     except:
@@ -176,5 +191,5 @@ if __name__ == "__main__":
         with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
             f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
         import mapyr
-    mapyr.process(config(), REQUIRED_VERSION)
+    mapyr.process()
 ```
