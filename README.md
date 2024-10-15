@@ -116,6 +116,8 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 - `VERBOSITY` - (str:"INFO") - Verbosity level for console output. Value can be any from logging module: ['CRITICAL','FATAL','ERROR','WARN','WARNING','INFO','DEBUG','NOTSET']
 
+- `PRINT_SIZE` - (bool:False) - Print output file size
+
 [//]: <end_of_tool_config_list>
 
 # Third-party libraries

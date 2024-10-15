@@ -194,6 +194,13 @@ class ToolConfig:
             Verbosity level for console output. Value can be any from logging module: ['CRITICAL','FATAL','ERROR','WARN','WARNING','INFO','DEBUG','NOTSET']
         '''
 
+        self.PRINT_SIZE : bool = False
+        '''
+            Print output file size
+        '''
+
+tool_config : ToolConfig = ToolConfig()
+
 #----------------------END TOOL CONFIG-----------------
 
 #----------------------EXCEPTIONS----------------------
@@ -414,10 +421,10 @@ class Target:
 
     def build(self) -> int:
         '''
-            Build target. If it is main target and PRINT_SIZE env present,
+            Build target. If it is main target and PRINT_SIZE true,
             so it can print file size difference
         '''
-        if os.getenv('PRINT_SIZE'):
+        if tool_config.PRINT_SIZE:
             if self.parent.main_target is self:
                 old_size = 0
                 if os.path.exists(self.path):
@@ -911,10 +918,11 @@ if 'tool_config' in dir():
     vars.tool_config = tool_config()
 '''
 
+    global tool_config
     parent_file = os.path.realpath(sys.argv[0])
     class _vars:
         config : list[ProjectConfig] = []
-        tool_config : ToolConfig = ToolConfig()
+        tool_config : ToolConfig = None
     vars = _vars()
     try:
         with open(parent_file) as f:
@@ -928,14 +936,18 @@ if 'tool_config' in dir():
                 })
         if not vars.config:
             RuntimeError('config load failed!')
-
+        if vars.tool_config:
+            tool_config = vars.tool_config
     except Exception as e:
-        setup_logger(vars.tool_config)
+        if vars.tool_config:
+            setup_logger(vars.tool_config)
+        else:
+            setup_logger(tool_config)
         app_logger.error(color_text(31,f"{e}"))
         return
 
-    setup_logger(vars.tool_config)
-    if vars.tool_config.MINIMUM_REQUIRED_VERSION > VERSION:
+    setup_logger(tool_config)
+    if tool_config.MINIMUM_REQUIRED_VERSION > VERSION:
         app_logger.warning(color_text(31,f"Required version {vars.tool_config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!"))
 
     os.chdir(os.path.dirname(parent_file))
