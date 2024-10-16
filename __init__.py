@@ -5,9 +5,9 @@ import subprocess
 import concurrent.futures
 import logging
 import json
-import copy
+import importlib.util
 
-VERSION = '0.4.4'
+VERSION = '0.4.5'
 
 #----------------------PROJECT CONFIG------------------
 
@@ -170,9 +170,6 @@ class ProjectConfig:
         '''
             Override CFLAGS in children projects
         '''
-
-    def copy(self) -> "ProjectConfig":
-        return copy.copy(self)
 
 #----------------------END PROJECT CONFIG--------------
 
@@ -772,24 +769,18 @@ class Project:
 
         for sp in self.config.SUBPROJECTS:
             sp_abs = os.path.abspath(sp)
-            self.tmp_config = None
             try:
+                # Load subproject build.py as module
+                spec = importlib.util.spec_from_file_location("mapyr_buildpy", f"{sp_abs}/build.py")
+                foo = importlib.util.module_from_spec(spec)
+                sys.modules["mapyr_buildpy"] = foo
+                spec.loader.exec_module(foo)
+                cfg : list[ProjectConfig] = foo.config()
+
+                # Load subproject in theirs directories
                 orig_dir = os.getcwd()
                 os.chdir(sp_abs)
-
-                with open(sp_abs+"/"+"build.py") as f:
-                    exec(f.read()+'\nself.tmp_config = config()',
-                        {
-                            '__file__':f'{sp_abs}/build.py',
-                            'mapyr':sys.modules[__name__],
-                        },
-                        {
-                            'self':self,
-                        })
-                if self.tmp_config is None:
-                    RuntimeError('config load failed!')
-
-                subprojects = [Project(x) for x in self.tmp_config]
+                subprojects = [Project(x) for x in cfg]
                 for p in subprojects:
                     p.load()
                 os.chdir(orig_dir)
@@ -903,67 +894,32 @@ def build(pc:list[ProjectConfig],group):
         with open('.vscode/c_cpp_properties.json', 'w+') as f:
             json.dump(main_config, f, indent=4)
 
-def process():
-    '''
-        Runs Mapyr.
-        Complicated algorythm for not inflate footer block in build.py
-        and save it untouched from version to version.
-        Loads parent build.py as python code, add injection code and
-        run it again to fetch configs
-   '''
-
-    fetch = '''
-vars.config = config()
-if 'tool_config' in dir():
-    vars.tool_config = tool_config()
-'''
-
+def process(config_fnc, tool_config_fnc=None):
     global tool_config
-    parent_file = os.path.realpath(sys.argv[0])
-    class _vars:
-        config : list[ProjectConfig] = []
-        tool_config : ToolConfig = None
-    vars = _vars()
-    try:
-        with open(parent_file) as f:
-            exec(f.read()+fetch,
-                {
-                    '__file__':parent_file,
-                    'mapyr':sys.modules[__name__],
-                },
-                {
-                    'vars':vars
-                })
-        if not vars.config:
-            RuntimeError('config load failed!')
-        if vars.tool_config:
-            tool_config = vars.tool_config
-    except Exception as e:
-        if vars.tool_config:
-            setup_logger(vars.tool_config)
-        else:
-            setup_logger(tool_config)
-        app_logger.error(color_text(31,f"{e}"))
-        return
+
+    if tool_config_fnc:
+        tool_config = tool_config_fnc()
 
     setup_logger(tool_config)
     if tool_config.MINIMUM_REQUIRED_VERSION > VERSION:
-        app_logger.warning(color_text(31,f"Required version {vars.tool_config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!"))
+        app_logger.warning(color_text(31,f"Required version {tool_config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!"))
 
-    os.chdir(os.path.dirname(parent_file))
+    os.chdir(os.path.dirname(os.path.realpath(sys.argv[0])))
     group = 'DEBUG'
     cmd = 'build'
+
+    config = config_fnc()
+
     if len(sys.argv)>1:
         cmd = sys.argv[1]
         if len(sys.argv) > 2:
             group = sys.argv[2]
 
     match(cmd):
-        case 'name':    print(vars.config[0].OUT_FILE)
-        case 'run':     Project(vars.config[0]).run()
-        case 'build':   build(vars.config,group)
+        case 'name':    print(config[0].OUT_FILE)
+        case 'run':     Project(config[0]).run()
+        case 'build':   build(config,group)
 
         case 'clean':
-            for p in vars.config:
+            for p in config:
                 Project(p).clean(group)
-

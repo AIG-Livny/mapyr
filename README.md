@@ -1,8 +1,6 @@
-# Mapyr v.0.4.4
+# Mapyr v.0.4.5
 
-Mapyr - is python build system GCC/clang oriented.
-
-For simple and complex projects with subprojects in it.
+Mapyr - is python build system GCC/clang oriented. Focused on project relationships in dependency tree.
 
 There is relate project for GNU Make `Mapr` https://github.com/AIG-Livny/mapr.git
 
@@ -22,16 +20,18 @@ def config() -> list["mapyr.ProjectConfig"]:
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git
+try:
+    import mapyr
+except:
+    import requests, os
+    os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
+    with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
+        f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
+    import mapyr
+
 if __name__ == "__main__":
-    try:
-        import mapyr
-    except:
-        import requests, os
-        os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
-        with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
-            f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
-        import mapyr
-    mapyr.process()
+    mapyr.process(config)
+
 ```
 # Commands
 - `build [group]` - build projects in group. Default group is 'DEBUG'
@@ -184,14 +184,16 @@ def config() -> list["mapyr.ProjectConfig"]:
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git
+try:
+    import mapyr
+except:
+    import requests, os
+    os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
+    with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
+        f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
+    import mapyr
+
 if __name__ == "__main__":
-    try:
-        import mapyr
-    except:
-        import requests, os
-        os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
-        with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
-            f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
-        import mapyr
-    mapyr.process()
+    mapyr.process(config, tool_config)
+
 ```
