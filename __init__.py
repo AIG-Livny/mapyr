@@ -942,6 +942,19 @@ class ArgParser(ArgParser):
 
 #----------------------END ARGUMENTS-------------------
 
+def gen_vscode_config():
+    if os.path.exists('.vscode'):
+        app_logger.error('directory .vscode already exists')
+        exit()
+    os.makedirs('.vscode')
+    extensions = {"recommendations": ["augustocdias.tasks-shell-input"]}
+    launch = {"version":"0.2.0","configurations":[{"name":"app","type":"cppdbg","request":"launch","program":"${workspaceFolder}/${input:GetName}","args":[],"stopAtEntry":False,"cwd":"${workspaceFolder}/bin","environment":[],"externalConsole":False,"MIMode":"gdb","preLaunchTask":"build","setupCommands":[{"text":"-enable-pretty-printing","ignoreFailures":True},{"text":"-gdb-set disassembly-flavor intel","ignoreFailures":True}]},{"name":"mapyr","type":"debugpy","request":"launch","program":"build.py","console":"integratedTerminal"}],"inputs":[{"id":"GetName","type":"command","command":"shellCommand.execute","args":{"command":"./build.py name","useFirstResult":True}}]}
+    tasks = {"version":"2.0.0","tasks":[{"label":"build","type":"shell","command":"./build.py","group":{"isDefault":True,"kind":"build"},"presentation":{"clear":True}},{"label":"run","type":"shell","command":"./build.py run"},{"label":"clean","type":"shell","command":"./build.py clean","presentation":{"reveal":"never"}}]}
+    with open('.vscode/extensions.json','w+') as fext, open('.vscode/launch.json','w+') as flaunch, open('.vscode/tasks.json','w+') as ftasks:
+        json.dump(extensions, fext, indent=4)
+        json.dump(launch, flaunch, indent=4)
+        json.dump(tasks, ftasks, indent=4)
+
 def build(pc:list[ProjectConfig],group):
     vscode_config_need = False
     projects : list[Project] = []
@@ -1010,12 +1023,13 @@ def process(config_fnc, tool_config_fnc=None):
     group = 'DEBUG'
     for arg in args:
         match arg:
-            case ArgParser.help:    argparser.print_help()
-            case ArgParser.name:    print(config[0].OUT_FILE)
-            case ArgParser.run:     Project(config[0]).run()
+            case ArgParser.help:        argparser.print_help()
+            case ArgParser.name:        print(config[0].OUT_FILE)
+            case ArgParser.run:         Project(config[0]).run()
+            case ArgParser.gcvscode:    gen_vscode_config()
 
-            case ArgParser.build:   build(config,group)
-            case ArgParser.group:   group = arg.values[0]
+            case ArgParser.build:       build(config,group)
+            case ArgParser.group:       group = arg.values[0]
 
             case ArgParser.clean:
                 for p in config:
