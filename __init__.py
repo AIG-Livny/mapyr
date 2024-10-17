@@ -852,6 +852,96 @@ class Project:
 
 #----------------------END PROJECT---------------------
 
+#----------------------ARGUMENTS-----------------------
+
+class ArgVarType:
+    String          = 1
+
+class Arg:
+    def __init__(self, help:str, vartypes : list[ArgVarType] = []) -> None:
+        self.help       = help
+        self.vartypes   = vartypes
+        self.name : str
+        self.values     = []
+
+    def addValue(self, value:str):
+        index = len(self.values)
+        vt = self.vartypes[index]
+        if vt == ArgVarType.String:
+            self.values.append(value)
+
+    def getOptCodes(self) -> str:
+        result = ''
+        for vt in self.vartypes:
+            if vt == ArgVarType.String:
+                result += '[str]'
+
+        return result
+
+    def __repr__(self) -> str:
+        return f'{self.name}:{self.values}'
+
+class ArgParser:
+    def __init__(self, help_head : str = '') -> None:
+        self.help_head = help_head
+
+        self.commands : list[Arg] = []
+        for membername in dir(self):
+            member = getattr(self,membername)
+            if type(member).__name__ == Arg.__name__:
+                member.name = membername
+                self.commands.append(member)
+
+    def print_help(self):
+        cmds = '     ' + '\n     '.join([f"{arg.name + ' ' +arg.getOptCodes():<20}{arg.help}" for arg in self.commands])
+        help = f'''{self.help_head}\nUsage:\n{cmds}\n'''
+        print(help)
+
+    def parse(self, args:list[str]) -> list[Arg]:
+        def cmd_find(cmd:str) -> Arg:
+            candidate = None
+            for c in self.commands:
+                if c.name == cmd:
+                    return c
+                if c.name.startswith(cmd):
+                    if candidate is not None:
+                        raise RuntimeError(f'command "{cmd}" is ambiguous')
+                    candidate = c
+            if candidate is not None:
+                return candidate
+            raise RuntimeError(f'command "{cmd}" not found')
+
+        result:list[Arg] = []
+        i = 1
+        while i < len(args):
+            arg = cmd_find(args[i])
+
+            for vt in arg.vartypes:
+                i += 1
+                if i >= len(args):
+                    raise RuntimeError('not enough arguments')
+
+                arg.addValue(args[i])
+
+            result.append(arg)
+            i += 1
+
+        return result
+
+    def __repr__(self) -> str:
+        return f'{self.commands}'
+
+class ArgParser(ArgParser):
+    name        = Arg('return OUT_FILE of first project')
+    build       = Arg('build group of projects')
+    group       = Arg('specifies group of projects to apply next commands them. default=DEBUG',[ArgVarType.String])
+    clean       = Arg('clean all project tree')
+    run         = Arg('run first project executable')
+    gcvscode    = Arg('generate default config for visual studio code')
+    help        = Arg('print this message')
+
+#----------------------END ARGUMENTS-------------------
+
 def build(pc:list[ProjectConfig],group):
     vscode_config_need = False
     projects : list[Project] = []
@@ -905,21 +995,28 @@ def process(config_fnc, tool_config_fnc=None):
         app_logger.warning(color_text(31,f"Required version {tool_config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!"))
 
     os.chdir(os.path.dirname(os.path.realpath(sys.argv[0])))
-    group = 'DEBUG'
-    cmd = 'build'
+
+    argparser = ArgParser(f'Mapyr {VERSION} is one-file build system written on python3\n')
+    try:
+        args = argparser.parse(sys.argv)
+    except Exception as e:
+        app_logger.error(f'{e}')
+        exit()
+
+    if len(args) == 0:
+        args = [ArgParser.build]
 
     config = config_fnc()
+    group = 'DEBUG'
+    for arg in args:
+        match arg:
+            case ArgParser.help:    argparser.print_help()
+            case ArgParser.name:    print(config[0].OUT_FILE)
+            case ArgParser.run:     Project(config[0]).run()
 
-    if len(sys.argv)>1:
-        cmd = sys.argv[1]
-        if len(sys.argv) > 2:
-            group = sys.argv[2]
+            case ArgParser.build:   build(config,group)
+            case ArgParser.group:   group = arg.values[0]
 
-    match(cmd):
-        case 'name':    print(config[0].OUT_FILE)
-        case 'run':     Project(config[0]).run()
-        case 'build':   build(config,group)
-
-        case 'clean':
-            for p in config:
-                Project(p).clean(group)
+            case ArgParser.clean:
+                for p in config:
+                    Project(p).clean(group)
