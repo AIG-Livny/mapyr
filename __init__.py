@@ -374,8 +374,8 @@ class Target:
         def _cmd_link_exe() -> Command:
             p.config.LIB_DIRS_FLAGS.extend([f"-L{x}" for x in p.config.LIB_DIRS])
             p.config.LIBS_FLAGS.extend([f"-l{x}" for x in p.config.LIBS])
-            p.config.LIB_DIRS_FLAGS = unique_list(p.config.LIB_DIRS_FLAGS)
-            p.config.LIBS_FLAGS = unique_list(p.config.LIBS_FLAGS)
+            p.config.LIB_DIRS_FLAGS = p.config.LIB_DIRS_FLAGS
+            p.config.LIBS_FLAGS = p.config.LIBS_FLAGS
 
             obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
             cmd = [p.config.COMPILER]+p.config.LINK_EXE_FLAGS+p.config.LIB_DIRS_FLAGS+obj+['-o',self.path]+p.config.LIBS_FLAGS
@@ -394,8 +394,8 @@ class Target:
             p.config.CFLAGS.extend([f"-D{x}" for x in p.config.PRIVATE_DEFINES])
             p.config.CFLAGS.extend([f"-D{x}" for x in p.config.DEFINES])
             p.config.INCLUDE_FLAGS.extend([f"-I{x}" for x in p.config.INCLUDE_DIRS])
-            p.config.CFLAGS = unique_list(p.config.CFLAGS)
-            p.config.INCLUDE_FLAGS = unique_list(p.config.INCLUDE_FLAGS)
+            p.config.CFLAGS = p.config.CFLAGS
+            p.config.INCLUDE_FLAGS = p.config.INCLUDE_FLAGS
 
             basename = os.path.splitext(self.path)[0]
             depflags = ['-MT',self.path,'-MMD','-MP','-MF',f"{basename}.d"]
@@ -628,14 +628,15 @@ class Project:
             layer = _pop_layer()
         return result
 
-    def load(self):
+    def load(self, group:str='DEBUG'):
         '''
             Load project variables, init subproject's configs
         '''
         self.main_target = None
         self.targets.targets = []
         self.targets_recursive.targets = []
-        self.load_subprojects()
+        self.load_subprojects(group)
+        unique_list(self.config.CFLAGS)
 
         if not self.config.OUT_FILE:
             raise Exceptions.OutFileEmpty()
@@ -726,6 +727,7 @@ class Project:
                 self.config.INCLUDE_DIRS.extend(spe)
             os.chdir(self.cwd)
 
+
         # Load libs data from pkg-config
         unique_list(self.config.PKG_SEARCH)
         if self.config.PKG_SEARCH:
@@ -741,6 +743,12 @@ class Project:
                 self.config.INCLUDE_FLAGS.extend([x for x in spl if x.startswith('-I')])
                 self.config.LIB_DIRS_FLAGS.extend([x for x in spl if x.startswith('-L')])
                 self.config.LIBS_FLAGS.extend([x for x in spl if x.startswith('-l')])
+
+        unique_list(self.config.DEFINES)
+        unique_list(self.config.INCLUDE_DIRS)
+        unique_list(self.config.EXPORT_DEFINES)
+        unique_list(self.config.PRIVATE_DEFINES)
+        unique_list(self.config.LIB_DIRS_FLAGS)
 
     def load_targets_recursive(self, group:str='DEBUG'):
         '''
@@ -760,13 +768,13 @@ class Project:
 
         self.targets_recursive.add_from_container(_get_targets(self))
 
-    def load_subprojects(self):
+    def load_subprojects(self, group:str='DEBUG'):
         '''
             We are loading the subproject data by executing `config` function
             inside `build.py`
         '''
         self.subprojects = []
-
+        loaded_names : list[str] = []
         for sp in self.config.SUBPROJECTS:
             sp_abs = os.path.abspath(sp)
             try:
@@ -780,11 +788,16 @@ class Project:
                 # Load subproject in theirs directories
                 orig_dir = os.getcwd()
                 os.chdir(sp_abs)
-                subprojects = [Project(x) for x in cfg]
-                for p in subprojects:
-                    p.load()
+                for sp_cfg in cfg:
+                    if group not in sp_cfg.GROUPS:
+                        continue
+                    if sp_abs in loaded_names:
+                        continue
+                    p = Project(sp_cfg)
+                    p.load(group)
+                    self.subprojects.append(p)
+                    loaded_names.append(sp_abs)
                 os.chdir(orig_dir)
-                self.subprojects.extend(subprojects)
 
             except Exception as e:
                 app_logger.error(color_text(31,f"Subproject {sp}: {e}"))
@@ -794,7 +807,7 @@ class Project:
         '''
             Build project
         '''
-        self.load()
+        self.load(group)
         layers = self.get_build_layers(group)
 
         if not layers:
@@ -828,7 +841,7 @@ class Project:
             return False
 
     def clean(self, group:str='DEBUG'):
-        self.load_subprojects()
+        self.load_subprojects(group)
         for sp in self.subprojects:
             os.chdir(sp.cwd)
             sp.clean(group)
@@ -980,6 +993,8 @@ def build(pc:list[ProjectConfig],group):
 
     configs = []
     for p in projects:
+        if group not in p.config.GROUPS:
+            continue
         if p.config.VSCODE_CPPTOOLS_CONFIG:
             config = {
                 'name':p.config.OUT_FILE,
