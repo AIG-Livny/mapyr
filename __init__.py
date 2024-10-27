@@ -858,7 +858,7 @@ class Project:
 
     def run(self):
         self.build()
-        sh(self.config.OUT_FILE)
+        sh(f'./{self.config.OUT_FILE}')
 
     def __repr__(self) -> str:
         return self.config.OUT_FILE
