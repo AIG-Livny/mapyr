@@ -7,7 +7,7 @@ import logging
 import json
 import importlib.util
 
-VERSION = '0.4.5'
+VERSION = '0.4.6'
 
 #----------------------PROJECT CONFIG------------------
 
@@ -674,7 +674,7 @@ class Project:
         object_targets = []
         deps = []
         for src in self.config.SOURCES:
-            path = self.config.OBJ_PATH + "/" + os.path.relpath(src).replace('../','updir/')
+            path = f"{self.config.OBJ_PATH}/{os.path.relpath(self.config.OUT_FILE).replace('../','updir/')}/{os.path.relpath(src).replace('../','updir/')}"
             spl = os.path.splitext(path)
             obj = f"{spl[0]}.o"
             dep = f"{spl[0]}.d"
@@ -1012,7 +1012,7 @@ def build(pc:list[ProjectConfig],group):
         with open('.vscode/c_cpp_properties.json', 'w+') as f:
             json.dump(main_config, f, indent=4)
 
-def process(config_fnc, tool_config_fnc=None):
+def process(config_fnc, tool_config_fnc=None, run_fnc=None):
     global tool_config
 
     if tool_config_fnc:
@@ -1040,11 +1040,15 @@ def process(config_fnc, tool_config_fnc=None):
         match arg:
             case ArgParser.help:        argparser.print_help()
             case ArgParser.name:        print(config[0].OUT_FILE)
-            case ArgParser.run:         Project(config[0]).run()
             case ArgParser.gcvscode:    gen_vscode_config()
 
             case ArgParser.build:       build(config,group)
             case ArgParser.group:       group = arg.values[0]
+            case ArgParser.run:
+                if run_fnc:
+                    run_fnc()
+                else:
+                    Project(config[0]).run()
 
             case ArgParser.clean:
                 for p in config:
