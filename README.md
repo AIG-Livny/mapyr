@@ -1,4 +1,4 @@
-# Mapyr v.0.4.6
+# Mapyr v.0.5.0
 
 Mapyr - is python build system GCC/clang oriented. Focused on project relationships in dependency tree.
 
@@ -9,14 +9,15 @@ Create `src/main.c` and `build.py` with content:
 ```py
 #!/usr/bin/python3
 
-def config() -> list["mapyr.ProjectConfig"]:
+def config() -> dict[str,"mapyr.ProjectConfig"]:
     result = []
     p = mapyr.ProjectConfig()
 
-    p.OUT_FILE = "bin/cloed"
+    p.OUT_FILE = "bin/test"
 
-    result.append(p)
-    return result
+    return {
+        'main':p
+    }
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git
@@ -50,6 +51,8 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 [//]: <start_of_project_config_list>
 
+- `CWD` - (str:caller_cwd()) - A start path of project.By default - directory of caller script
+
 - `OUT_FILE` - (str:"") - Name of out file. Name and extension defines type of file:    - executable: without extension or `.exe`    - static library:	`lib%.a`    - dynamic library:	`%.dll` or `%.so`
 
 - `GROUPS` - (list[str]:['DEBUG']) - A project can belong to several groups. Default group is DEBUGWhen build.py started without arguments, it runs build DEBUG group
@@ -76,7 +79,7 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 - `LINK_EXE_FLAGS` - (list[str]:[]) - Flags used while executable linking
 
-- `SUBPROJECTS` - (list[str]:[]) - Paths to directories contains build.pyIf subproject is library, it willauto-included as library in the project.
+- `SUBPROJECTS` - (list[ProjectConfig]:[]) - List of projects that must be builded before and used within this project
 
 - `LIB_DIRS` - (list[str]:[]) - Directories where looking for libraries
 
@@ -152,14 +155,15 @@ ___lib
 ```py
 #!/usr/bin/python3
 
+import lib.any_other_lib.build
+
 def tool_config() -> "mapyr.ToolConfig":
     tc = mapyr.ToolConfig()
     tc.MINIMUM_REQUIRED_VERSION = '0.4.4'
     tc.VERBOSITY = 'DEBUG'
     return tc
 
-def config() -> list["mapyr.ProjectConfig"]:
-    result = []
+def config() -> dict[str,"mapyr.ProjectConfig"]:
     p = mapyr.ProjectConfig()
 
     p.OUT_FILE = "bin/cloed"
@@ -179,8 +183,14 @@ def config() -> list["mapyr.ProjectConfig"]:
         "fontconfig",
     ]
 
-    result.append(p)
-    return result
+    p.SUBPROJECTS = [
+        lib.any_other_lib.build.config()['main']
+    ]
+
+    return {
+        'main':p
+    }
+
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git

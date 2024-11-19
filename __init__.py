@@ -6,17 +6,24 @@ import concurrent.futures
 import logging
 import json
 import importlib.util
+import inspect
 
-VERSION = '0.4.6'
+VERSION = '0.5.0'
 
 #----------------------PROJECT CONFIG------------------
 
 class ProjectConfig:
     '''
-        This config used for any project. Controls project build process
+        A config will be used for each project.
     '''
 
     def __init__(self) -> None:
+        self.CWD : str = caller_cwd()
+        '''
+            A start path of project.
+            By default - directory of caller script
+        '''
+
         self.OUT_FILE : str = ""
         '''
             Name of out file. Name and extension defines type of file:
@@ -87,11 +94,9 @@ class ProjectConfig:
             Flags used while executable linking
         '''
 
-        self.SUBPROJECTS : list[str] = []
+        self.SUBPROJECTS : list[ProjectConfig] = []
         '''
-            Paths to directories contains build.py
-            If subproject is library, it will
-            auto-included as library in the project.
+            List of projects that must be builded before and used within this project
         '''
 
         self.LIB_DIRS : list[str] = []
@@ -309,7 +314,7 @@ def get_size(path:str) -> int:
 
 def diff(old:int, new:int) -> str:
     '''
-        Get difference btw two numbers in string format with test color and sign
+        Get difference btw two numbers in string format with color and sign
     '''
     diff = new - old
     summstr = '0'
@@ -320,11 +325,29 @@ def diff(old:int, new:int) -> str:
     return summstr
 
 def unique_list(l:list):
+    '''
+        Make list elements unique
+    '''
     result = []
     for v in l:
         if v not in result:
             result.append(v)
     return result
+
+def get_config(path:str) -> dict[str,ProjectConfig]:
+    '''
+        Load configs from other build script
+    '''
+    spec = importlib.util.spec_from_file_location("mapyr_buildpy", path)
+    foo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(foo)
+    return foo.config()
+
+def caller_cwd() -> str:
+    '''
+        Path to caller script directory
+    '''
+    return os.path.dirname(os.path.abspath(inspect.stack()[2][1]))
 
 #----------------------END UTILS-----------------------
 
@@ -497,7 +520,6 @@ class Project:
         self.config             : ProjectConfig = config
         self.main_target        : Target = Target(self.config.OUT_FILE,[],self)
         self.subprojects        : list[Project] = []
-        self.cwd                : str = os.getcwd()
 
     def get_targets_from_d_file(self, path : str):
         '''
@@ -635,7 +657,7 @@ class Project:
         self.main_target = None
         self.targets.targets = []
         self.targets_recursive.targets = []
-        self.load_subprojects(group)
+        self.load_subprojects()
         unique_list(self.config.CFLAGS)
 
         if not self.config.OUT_FILE:
@@ -695,7 +717,7 @@ class Project:
             chdir is for right abspath work
         '''
         for sp in self.subprojects:
-            os.chdir(sp.cwd)
+            os.chdir(sp.config.CWD)
             sp_path = os.path.abspath(sp.config.OUT_FILE)
             self.main_target.prerequisites.append(sp.main_target)
             fname = os.path.basename(sp.config.OUT_FILE)
@@ -725,7 +747,7 @@ class Project:
                 self.config.LIB_DIRS.append(os.path.dirname(sp_path))
                 spe = [os.path.abspath(x) for x in sp.config.EXPORT_INCLUDE_DIRS]
                 self.config.INCLUDE_DIRS.extend(spe)
-            os.chdir(self.cwd)
+            os.chdir(self.config.CWD)
 
 
         # Load libs data from pkg-config
@@ -768,40 +790,18 @@ class Project:
 
         self.targets_recursive.add_from_container(_get_targets(self))
 
-    def load_subprojects(self, group:str='DEBUG'):
-        '''
-            We are loading the subproject data by executing `config` function
-            inside `build.py`
-        '''
+    def load_subprojects(self):
         self.subprojects = []
-        loaded_names : list[str] = []
-        for sp in self.config.SUBPROJECTS:
-            sp_abs = os.path.abspath(sp)
+        for spc in self.config.SUBPROJECTS:
             try:
-                # Load subproject build.py as module
-                spec = importlib.util.spec_from_file_location("mapyr_buildpy", f"{sp_abs}/build.py")
-                foo = importlib.util.module_from_spec(spec)
-                sys.modules["mapyr_buildpy"] = foo
-                spec.loader.exec_module(foo)
-                cfg : list[ProjectConfig] = foo.config()
-
-                # Load subproject in theirs directories
+                sp = Project(spc)
                 orig_dir = os.getcwd()
-                os.chdir(sp_abs)
-                for sp_cfg in cfg:
-                    if group not in sp_cfg.GROUPS:
-                        continue
-                    if sp_abs in loaded_names:
-                        continue
-                    p = Project(sp_cfg)
-                    p.load(group)
-                    self.subprojects.append(p)
-                    loaded_names.append(sp_abs)
+                os.chdir(spc.CWD)
+                sp.load()
                 os.chdir(orig_dir)
-
+                self.subprojects.append(sp)
             except Exception as e:
-                app_logger.error(color_text(31,f"Subproject {sp}: {e}"))
-                continue
+                app_logger.error(color_text(31,f"Subproject {spc.OUT_FILE}: {e}"))
 
     def build(self, group:str='DEBUG') -> bool:
         '''
@@ -968,10 +968,10 @@ def gen_vscode_config():
         json.dump(launch, flaunch, indent=4)
         json.dump(tasks, ftasks, indent=4)
 
-def build(pc:list[ProjectConfig],group):
+def build(pc:dict[str,ProjectConfig],group):
     vscode_config_need = False
     projects : list[Project] = []
-    for p in pc:
+    for p in pc.values():
         if group not in p.GROUPS:
             continue
         prj = Project(p)
@@ -1039,7 +1039,7 @@ def process(config_fnc, tool_config_fnc=None, run_fnc=None):
     for arg in args:
         match arg:
             case ArgParser.help:        argparser.print_help()
-            case ArgParser.name:        print(config[0].OUT_FILE)
+            case ArgParser.name:        print(config.values()[0].OUT_FILE)
             case ArgParser.gcvscode:    gen_vscode_config()
 
             case ArgParser.build:       build(config,group)
@@ -1048,7 +1048,7 @@ def process(config_fnc, tool_config_fnc=None, run_fnc=None):
                 if run_fnc:
                     run_fnc()
                 else:
-                    Project(config[0]).run()
+                    Project(config.values()[0]).run()
 
             case ArgParser.clean:
                 for p in config:
