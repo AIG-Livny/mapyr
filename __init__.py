@@ -8,7 +8,7 @@ import json
 import importlib.util
 import inspect
 
-VERSION = '0.5.0'
+VERSION = '0.5.1'
 
 #----------------------PROJECT CONFIG------------------
 
@@ -30,12 +30,6 @@ class ProjectConfig:
                 - executable: without extension or `.exe`
                 - static library:	`lib%.a`
                 - dynamic library:	`%.dll` or `%.so`
-        '''
-
-        self.GROUPS : list[str] = ['DEBUG']
-        '''
-            A project can belong to several groups. Default group is DEBUG
-            When build.py started without arguments, it runs build DEBUG group
         '''
 
         self.COMPILER : str = "clang"
@@ -575,7 +569,7 @@ class Project:
                 result.append(trg)
         return result
 
-    def check_if_need_build(self, group:str='DEBUG'):
+    def check_if_need_build(self):
         '''
             Check and set `need_build` variable
         '''
@@ -589,8 +583,6 @@ class Project:
             target_time = os.path.getmtime(target.path)
 
             for prq in target.prerequisites:
-                if not group in prq.parent.config.GROUPS:
-                    continue
                 if os.path.exists(prq.path):
                     prq_time = os.path.getmtime(prq.path)
                     if prq_time > target_time:
@@ -614,12 +606,12 @@ class Project:
                 target.need_build = True
                 _set_parents_need_build(target)
 
-    def get_build_layers(self, group:str='DEBUG') -> list[list[Target]]:
+    def get_build_layers(self) -> list[list[Target]]:
         '''
             Return list of layers. Layer is bunch of targets that can be built parralel
         '''
-        self.load_targets_recursive(group)
-        self.check_if_need_build(group)
+        self.load_targets_recursive()
+        self.check_if_need_build()
 
         # remove targets that not need to build
         torem = []
@@ -656,7 +648,7 @@ class Project:
             layer = _pop_layer()
         return result
 
-    def load(self, group:str='DEBUG'):
+    def load(self):
         '''
             Load project variables, init subproject's configs
         '''
@@ -778,7 +770,7 @@ class Project:
         unique_list(self.config.PRIVATE_DEFINES)
         unique_list(self.config.LIB_DIRS_FLAGS)
 
-    def load_targets_recursive(self, group:str='DEBUG'):
+    def load_targets_recursive(self):
         '''
             Load all subproject targets recursive
         '''
@@ -787,11 +779,9 @@ class Project:
             for prj in p.subprojects:
                 targs = _get_targets(prj)
                 for t in targs.targets:
-                    if group in t.parent.config.GROUPS:
-                        result.add(t)
+                    result.add(t)
 
-            if group in p.config.GROUPS:
-                result.add_from_container(p.targets)
+            result.add_from_container(p.targets)
             return result
 
         self.targets_recursive.add_from_container(_get_targets(self))
@@ -809,12 +799,12 @@ class Project:
             except Exception as e:
                 app_logger.error(color_text(31,f"Subproject {spc.OUT_FILE}: {e}"))
 
-    def build(self, group:str='DEBUG') -> bool:
+    def build(self) -> bool:
         '''
             Build project
         '''
-        self.load(group)
-        layers = self.get_build_layers(group)
+        self.load()
+        layers = self.get_build_layers()
 
         if not layers:
             app_logger.info('Nothing to build')
@@ -846,15 +836,12 @@ class Project:
             app_logger.error(color_text(91,f'{name}: Error. Stopped.'))
             return False
 
-    def clean(self, group:str='DEBUG'):
-        self.load_subprojects(group)
+    def clean(self):
+        self.load_subprojects()
         for sp in self.subprojects:
             os.chdir(sp.cwd)
-            sp.clean(group)
+            sp.clean()
             os.chdir(self.cwd)
-
-        if not group in self.config.GROUPS:
-            return
 
         shutil.rmtree(self.config.OBJ_PATH,True)
         dirs = os.path.dirname(self.config.OUT_FILE)
@@ -873,15 +860,20 @@ class Project:
 
 #----------------------ARGUMENTS-----------------------
 
+class ArgType:
+    Named = 1
+    Positional = 2
+
 class ArgVarType:
-    String          = 1
+    String = 1
 
 class Arg:
-    def __init__(self, help:str, vartypes : list[ArgVarType] = []) -> None:
-        self.help       = help
-        self.vartypes   = vartypes
+    def __init__(self, help:str, vartypes : list[ArgVarType] = [], type = ArgType.Named) -> None:
+        self.help = help
+        self.vartypes = vartypes
         self.name : str
-        self.values     = []
+        self.values = []
+        self.type = type
 
     def addValue(self, value:str):
         index = len(self.values)
@@ -910,6 +902,9 @@ class ArgParser:
             if type(member).__name__ == Arg.__name__:
                 member.name = membername
                 self.commands.append(member)
+        def _by_type(val:Arg):
+            return 0 if val.type == ArgType.Positional else 1
+        self.commands.sort(key=_by_type)
 
     def print_help(self):
         cmds = '     ' + '\n     '.join([f"{arg.name + ' ' +arg.getOptCodes():<20}{arg.help}" for arg in self.commands])
@@ -917,30 +912,39 @@ class ArgParser:
         print(help)
 
     def parse(self, args:list[str]) -> list[Arg]:
-        def cmd_find(cmd:str) -> Arg:
+        def cmd_find(i) -> Arg:
             candidate = None
             for c in self.commands:
-                if c.name == cmd:
+                if c.type == ArgType.Positional:
+                    continue
+                if c.name == args[i]:
                     return c
-                if c.name.startswith(cmd):
+                if c.name.startswith(args[i]):
                     if candidate is not None:
-                        raise RuntimeError(f'command "{cmd}" is ambiguous')
+                        raise RuntimeError(f'command "{args[i]}" is ambiguous')
                     candidate = c
             if candidate is not None:
                 return candidate
-            raise RuntimeError(f'command "{cmd}" not found')
+            else:
+                if i < len(self.commands):
+                    if self.commands[i-1].type == ArgType.Positional:
+                        return self.commands[i-1]
+            raise RuntimeError(f'command "{args[i]}" not found')
 
         result:list[Arg] = []
         i = 1
         while i < len(args):
-            arg = cmd_find(args[i])
+            arg = cmd_find(i)
 
-            for vt in arg.vartypes:
-                i += 1
-                if i >= len(args):
-                    raise RuntimeError('not enough arguments')
+            if arg.type == ArgType.Positional:
+                arg.values.append(args[i])
+            else:
+                for vt in arg.vartypes:
+                    i += 1
+                    if i >= len(args):
+                        raise RuntimeError('not enough arguments')
 
-                arg.addValue(args[i])
+                    arg.addValue(args[i])
 
             result.append(arg)
             i += 1
@@ -951,14 +955,15 @@ class ArgParser:
         return f'{self.commands}'
 
 class ArgParser(ArgParser):
+    project     = Arg('return OUT_FILE of first project',type=ArgType.Positional)
     name        = Arg('return OUT_FILE of first project')
-    build       = Arg('build group of projects')
-    group       = Arg('specifies group of projects to apply next commands them. default=DEBUG',[ArgVarType.String])
+    build       = Arg('build')
     clean       = Arg('clean all project tree')
     run         = Arg('run first project executable')
     gcvscode    = Arg('generate default config for visual studio code')
     help        = Arg('print this message')
 
+    actions = [name,build,clean,run,gcvscode,help]
 #----------------------END ARGUMENTS-------------------
 
 def gen_vscode_config():
@@ -974,20 +979,10 @@ def gen_vscode_config():
         json.dump(launch, flaunch, indent=4)
         json.dump(tasks, ftasks, indent=4)
 
-def build(pc:dict[str,ProjectConfig],group):
-    vscode_config_need = False
-    projects : list[Project] = []
-    for p in pc.values():
-        if group not in p.GROUPS:
-            continue
-        prj = Project(p)
-        projects.append(prj)
-        prj.build(group)
-        if p.VSCODE_CPPTOOLS_CONFIG:
-            vscode_config_need = True
-
-    # VSCode c_cpp_properties generating
-    if vscode_config_need == False:
+def build(pc:ProjectConfig):
+    prj = Project(pc)
+    prj.build()
+    if not pc.VSCODE_CPPTOOLS_CONFIG:
         return
 
     vscode_file_path = '.vscode/c_cpp_properties.json'
@@ -997,26 +992,19 @@ def build(pc:dict[str,ProjectConfig],group):
         if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
             return
 
-    configs = []
-    for p in projects:
-        if group not in p.config.GROUPS:
-            continue
-        if p.config.VSCODE_CPPTOOLS_CONFIG:
-            config = {
-                'name':p.config.OUT_FILE,
-                'includePath':p.config.INCLUDE_DIRS,
-                'defines':p.config.PRIVATE_DEFINES + p.config.DEFINES
-            }
-            configs.append(config)
+    config = {
+        'name':pc.config.OUT_FILE,
+        'includePath':pc.config.INCLUDE_DIRS,
+        'defines':pc.config.PRIVATE_DEFINES + p.config.DEFINES
+    }
 
-    if configs:
-        main_config = {
-            'configurations':configs,
-            "version": 4
-        }
+    main_config = {
+        'configurations':config,
+        "version": 4
+    }
 
-        with open('.vscode/c_cpp_properties.json', 'w+') as f:
-            json.dump(main_config, f, indent=4)
+    with open('.vscode/c_cpp_properties.json', 'w+') as f:
+        json.dump(main_config, f, indent=4)
 
 def process(config_fnc, tool_config_fnc=None, run_fnc=None):
     global tool_config
@@ -1037,25 +1025,36 @@ def process(config_fnc, tool_config_fnc=None, run_fnc=None):
         app_logger.error(f'{e}')
         exit()
 
-    if len(args) == 0:
-        args = [ArgParser.build]
+    project = 'main'
+    actions_num = 0
+    for arg in args:
+        if arg in ArgParser.actions:
+            actions_num += 1
+        if arg == ArgParser.project:
+            project = arg.values[0]
+
+    if actions_num == 0:
+        args.append(ArgParser.build)
 
     config = config_fnc()
-    group = 'DEBUG'
+
+    if project not in config.keys():
+        app_logger.error(f'{project} not found')
+        exit()
+
     for arg in args:
         match arg:
+            case ArgParser.project: continue
             case ArgParser.help:        argparser.print_help()
-            case ArgParser.name:        print(config.values()[0].OUT_FILE)
+            case ArgParser.name:        print(config[project].OUT_FILE)
             case ArgParser.gcvscode:    gen_vscode_config()
 
-            case ArgParser.build:       build(config,group)
-            case ArgParser.group:       group = arg.values[0]
+            case ArgParser.build:       build(config[project])
             case ArgParser.run:
                 if run_fnc:
                     run_fnc()
                 else:
-                    Project(config.values()[0]).run()
+                    Project(config[project]).run()
 
             case ArgParser.clean:
-                for p in config:
-                    Project(p).clean(group)
+                Project(config[project]).clean()
