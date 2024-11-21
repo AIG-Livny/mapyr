@@ -338,7 +338,13 @@ def get_config(path:str) -> dict[str,ProjectConfig]:
     '''
         Load configs from other build script
     '''
+    orig_cwd = os.getcwd()
+    os.chdir(caller_cwd())
     spec = importlib.util.spec_from_file_location("mapyr_buildpy", path)
+    os.chdir(orig_cwd)
+
+    if spec is None:
+        raise ModuleNotFoundError(path)
     foo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(foo)
     return foo.config()
