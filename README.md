@@ -1,4 +1,4 @@
-# Mapyr v.0.5.2
+# Mapyr v.0.5.3
 
 Mapyr - is python build system GCC/clang oriented. Focused on project relationships in dependency tree.
 

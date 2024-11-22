@@ -8,7 +8,7 @@ import json
 import importlib.util
 import inspect
 
-VERSION = '0.5.2'
+VERSION = '0.5.3'
 
 #----------------------PROJECT CONFIG------------------
 
@@ -221,6 +221,13 @@ class ToolConfig:
         '''
             Print output file size
         '''
+
+        '''
+            Custom run function `def myfunc(prj:Project) -> None`
+            If set, function will be executed on `run` command
+        '''
+        self.CUSTOM_RUN_FUNCTION : function[Project] = None
+
 
 tool_config : ToolConfig = ToolConfig()
 
@@ -1027,7 +1034,7 @@ def gen_vscode_config():
         json.dump(launch, flaunch, indent=4)
         json.dump(tasks, ftasks, indent=4)
 
-def process(config_fnc, tool_config_fnc=None, run_fnc=None):
+def process(config_fnc, tool_config_fnc=None):
     global tool_config
 
     if tool_config_fnc:
@@ -1060,8 +1067,12 @@ def process(config_fnc, tool_config_fnc=None, run_fnc=None):
 
             case ArgParser.build:       Project(config[arg.values[0]]).build()
             case ArgParser.run:
-                if run_fnc:
-                    run_fnc()
+                if arg.values[0] == 'all':
+                    for conf in config.values():
+                        if tool_config.CUSTOM_RUN_FUNCTION:
+                            tool_config.CUSTOM_RUN_FUNCTION(Project(conf))
+                        else:
+                            Project(conf).run()
                 else:
                     Project(config[arg.values[0]]).run()
 
