@@ -8,7 +8,7 @@ import json
 import importlib.util
 import inspect
 
-VERSION = '0.5.1'
+VERSION = '0.5.2'
 
 #----------------------PROJECT CONFIG------------------
 
@@ -42,11 +42,6 @@ class ProjectConfig:
             Path where store object files
         '''
 
-        self.AR : str = "ar"
-        '''
-            Archiver
-        '''
-
         self.SRC_EXTS : list[str] = [".cpp",".c"]
         '''
             Source extensions for search
@@ -71,6 +66,11 @@ class ProjectConfig:
         '''
             Include directories that also will be sended to parent project
             and parent will include them while his building process
+        '''
+
+        self.AR : str = "ar"
+        '''
+            Archiver
         '''
 
         self.AR_FLAGS : list[str] = ["r","c","s"]
@@ -297,6 +297,8 @@ def silentremove(filename):
         os.remove(filename)
     except FileNotFoundError:
         pass
+    except IsADirectoryError:
+        shutil.rmtree(filename,ignore_errors=True)
 
 def get_size(path:str) -> int:
     '''
@@ -515,11 +517,22 @@ class Project:
         `cwd` - working directory of project
     '''
     def __init__(self, config:ProjectConfig) -> None:
-        self.targets            = TargetContainer()
-        self.targets_recursive  = TargetContainer()
-        self.config             : ProjectConfig = config
-        self.main_target        : Target = Target(self.config.OUT_FILE,[],self)
-        self.subprojects        : list[Project] = []
+        self.targets                        = TargetContainer()
+        self.targets_recursive              = TargetContainer()
+        self.config : ProjectConfig         = config
+        self.main_target : Target           = Target(self.config.OUT_FILE,[],self)
+        self.subprojects : list[Project]    = []
+        self.obj_path : str                 = f"{config.OBJ_PATH}/{os.path.relpath(config.OUT_FILE).replace('../','updir/')}"
+
+    def get_config_str(self) -> str:
+        res = [self.config.AR,self.config.COMPILER]
+        res.append(' '.join(self.config.AR_FLAGS))
+        res.append(' '.join(self.config.CFLAGS))
+        res.append(' '.join(self.config.DEFINES))
+        res.append(' '.join(self.config.EXPORT_DEFINES))
+        res.append(' '.join(self.config.PRIVATE_DEFINES))
+        res.append(' '.join(self.config.LINK_EXE_FLAGS))
+        return ' '.join(res)
 
     def get_targets_from_d_file(self, path : str):
         '''
@@ -694,7 +707,7 @@ class Project:
         object_targets = []
         deps = []
         for src in self.config.SOURCES:
-            path = f"{self.config.OBJ_PATH}/{os.path.relpath(self.config.OUT_FILE).replace('../','updir/')}/{os.path.relpath(src).replace('../','updir/')}"
+            path = f"{self.obj_path}/{os.path.relpath(src).replace('../','updir/')}"
             spl = os.path.splitext(path)
             obj = f"{spl[0]}.o"
             dep = f"{spl[0]}.d"
@@ -803,6 +816,26 @@ class Project:
         '''
             Build project
         '''
+
+        str_path = f"{self.obj_path}/config_str"
+        build_str = self.get_config_str()
+
+        write_config = False
+
+        if os.path.isfile(str_path):
+            with open(str_path,'r') as f:
+                if build_str != f.read():
+                    silentremove(self.obj_path)
+                    write_config = True
+        else:
+            write_config = True
+
+        if write_config:
+            os.makedirs(os.path.dirname(str_path),exist_ok=True)
+            with open(str_path,'w+') as f:
+                f.write(build_str)
+
+
         self.load()
         layers = self.get_build_layers()
 
@@ -860,20 +893,15 @@ class Project:
 
 #----------------------ARGUMENTS-----------------------
 
-class ArgType:
-    Named = 1
-    Positional = 2
-
 class ArgVarType:
     String = 1
 
 class Arg:
-    def __init__(self, help:str, vartypes : list[ArgVarType] = [], type = ArgType.Named) -> None:
+    def __init__(self, help:str, vartypes : list[ArgVarType] = []) -> None:
         self.help = help
         self.vartypes = vartypes
         self.name : str
         self.values = []
-        self.type = type
 
     def addValue(self, value:str):
         index = len(self.values)
@@ -902,9 +930,6 @@ class ArgParser:
             if type(member).__name__ == Arg.__name__:
                 member.name = membername
                 self.commands.append(member)
-        def _by_type(val:Arg):
-            return 0 if val.type == ArgType.Positional else 1
-        self.commands.sort(key=_by_type)
 
     def print_help(self):
         cmds = '     ' + '\n     '.join([f"{arg.name + ' ' +arg.getOptCodes():<20}{arg.help}" for arg in self.commands])
@@ -915,8 +940,6 @@ class ArgParser:
         def cmd_find(i) -> Arg:
             candidate = None
             for c in self.commands:
-                if c.type == ArgType.Positional:
-                    continue
                 if c.name == args[i]:
                     return c
                 if c.name.startswith(args[i]):
@@ -925,10 +948,6 @@ class ArgParser:
                     candidate = c
             if candidate is not None:
                 return candidate
-            else:
-                if i < len(self.commands):
-                    if self.commands[i-1].type == ArgType.Positional:
-                        return self.commands[i-1]
             raise RuntimeError(f'command "{args[i]}" not found')
 
         result:list[Arg] = []
@@ -936,15 +955,12 @@ class ArgParser:
         while i < len(args):
             arg = cmd_find(i)
 
-            if arg.type == ArgType.Positional:
-                arg.values.append(args[i])
-            else:
-                for vt in arg.vartypes:
-                    i += 1
-                    if i >= len(args):
-                        raise RuntimeError('not enough arguments')
+            for vt in arg.vartypes:
+                i += 1
+                if i >= len(args):
+                    raise RuntimeError('not enough arguments')
 
-                    arg.addValue(args[i])
+                arg.addValue(args[i])
 
             result.append(arg)
             i += 1
@@ -955,15 +971,13 @@ class ArgParser:
         return f'{self.commands}'
 
 class ArgParser(ArgParser):
-    project     = Arg('return OUT_FILE of first project',type=ArgType.Positional)
-    name        = Arg('return OUT_FILE of first project')
-    build       = Arg('build')
-    clean       = Arg('clean all project tree')
-    run         = Arg('run first project executable')
+    outfile     = Arg('return OUT_FILE of project',[ArgVarType.String])
+    build       = Arg('build project',[ArgVarType.String])
+    clean       = Arg('clean all project tree project or all',[ArgVarType.String])
+    run         = Arg('run project executable',[ArgVarType.String])
     gcvscode    = Arg('generate default config for visual studio code')
     help        = Arg('print this message')
 
-    actions = [name,build,clean,run,gcvscode,help]
 #----------------------END ARGUMENTS-------------------
 
 def gen_vscode_config():
@@ -972,7 +986,7 @@ def gen_vscode_config():
         exit()
     os.makedirs('.vscode')
     extensions = {"recommendations": ["augustocdias.tasks-shell-input"]}
-    launch = {"version":"0.2.0","configurations":[{"name":"app","type":"cppdbg","request":"launch","program":"${workspaceFolder}/${input:GetName}","args":[],"stopAtEntry":False,"cwd":"${workspaceFolder}/bin","environment":[],"externalConsole":False,"MIMode":"gdb","preLaunchTask":"build","setupCommands":[{"text":"-enable-pretty-printing","ignoreFailures":True},{"text":"-gdb-set disassembly-flavor intel","ignoreFailures":True}]},{"name":"mapyr","type":"debugpy","request":"launch","program":"build.py","console":"integratedTerminal"}],"inputs":[{"id":"GetName","type":"command","command":"shellCommand.execute","args":{"command":"./build.py name","useFirstResult":True}}]}
+    launch = {"version":"0.2.0","configurations":[{"name":"app","type":"cppdbg","request":"launch","program":"${workspaceFolder}/${input:GetName}","args":[],"stopAtEntry":False,"cwd":"${workspaceFolder}","environment":[],"externalConsole":False,"MIMode":"gdb","preLaunchTask":"build","setupCommands":[{"text":"-enable-pretty-printing","ignoreFailures":True},{"text":"-gdb-set disassembly-flavor intel","ignoreFailures":True}]},{"name":"mapyr","type":"debugpy","request":"launch","program":"build.py","console":"integratedTerminal"}],"inputs":[{"id":"GetName","type":"command","command":"shellCommand.execute","args":{"command":"./build.py outfile main","useFirstResult":True}}]}
     tasks = {"version":"2.0.0","tasks":[{"label":"build","type":"shell","command":"./build.py","group":{"isDefault":True,"kind":"build"},"presentation":{"clear":True}},{"label":"run","type":"shell","command":"./build.py run"},{"label":"clean","type":"shell","command":"./build.py clean","presentation":{"reveal":"never"}}]}
     with open('.vscode/extensions.json','w+') as fext, open('.vscode/launch.json','w+') as flaunch, open('.vscode/tasks.json','w+') as ftasks:
         json.dump(extensions, fext, indent=4)
@@ -982,6 +996,7 @@ def gen_vscode_config():
 def build(pc:ProjectConfig):
     prj = Project(pc)
     prj.build()
+
     if not pc.VSCODE_CPPTOOLS_CONFIG:
         return
 
@@ -1018,43 +1033,36 @@ def process(config_fnc, tool_config_fnc=None, run_fnc=None):
 
     os.chdir(os.path.dirname(os.path.realpath(sys.argv[0])))
 
-    argparser = ArgParser(f'Mapyr {VERSION} is one-file build system written on python3\n')
+    argparser = ArgParser(f'Mapyr {VERSION} is one-file build system written in python3\n')
     try:
         args = argparser.parse(sys.argv)
     except Exception as e:
         app_logger.error(f'{e}')
         exit()
 
-    project = 'main'
-    actions_num = 0
-    for arg in args:
-        if arg in ArgParser.actions:
-            actions_num += 1
-        if arg == ArgParser.project:
-            project = arg.values[0]
-
-    if actions_num == 0:
-        args.append(ArgParser.build)
+    if len(args) == 0:
+        args = [ArgParser.build]
+        args[0].values.append('main')
 
     config = config_fnc()
 
-    if project not in config.keys():
-        app_logger.error(f'{project} not found')
-        exit()
-
     for arg in args:
         match arg:
-            case ArgParser.project: continue
             case ArgParser.help:        argparser.print_help()
-            case ArgParser.name:        print(config[project].OUT_FILE)
+            case ArgParser.outfile:     print(config[arg.values[0]].OUT_FILE)
             case ArgParser.gcvscode:    gen_vscode_config()
 
-            case ArgParser.build:       build(config[project])
+            case ArgParser.build:       build(config[arg.values[0]])
             case ArgParser.run:
                 if run_fnc:
                     run_fnc()
                 else:
-                    Project(config[project]).run()
+                    Project(config[arg.values[0]]).run()
 
             case ArgParser.clean:
-                Project(config[project]).clean()
+                if arg.values[0] == 'all':
+                    for conf in config.values():
+                        Project(conf).clean()
+                else:
+                    Project(config[arg.values[0]]).clean()
+
