@@ -37,11 +37,6 @@ class ProjectConfig:
             Compiler, global variable, come from main project
         '''
 
-        self.OBJ_PATH : str = "obj"
-        '''
-            Path where store object files
-        '''
-
         self.SRC_EXTS : list[str] = [".cpp",".c"]
         '''
             Source extensions for search
@@ -169,6 +164,38 @@ class ProjectConfig:
         '''
             Override CFLAGS in children projects
         '''
+
+def get_config_str(pc:ProjectConfig) -> str:
+    res = [pc.AR,pc.COMPILER]
+    res.append(' '.join(pc.AR_FLAGS))
+    res.append(' '.join(pc.CFLAGS))
+    res.append(' '.join(pc.DEFINES))
+    res.append(' '.join(pc.EXPORT_DEFINES))
+    res.append(' '.join(pc.PRIVATE_DEFINES))
+    res.append(' '.join(pc.LINK_EXE_FLAGS))
+    return ' '.join(res)
+
+def remove_artifacts_if_config_different(pc:ProjectConfig):
+    orig_dir = os.getcwd()
+    def _rmart(_pc:ProjectConfig):
+        os.chdir(_pc.CWD)
+        for spc in _pc.SUBPROJECTS:
+            _rmart(spc)
+
+        obj_path = f"obj/{os.path.relpath(_pc.OUT_FILE).replace('../','updir/')}"
+        str_path = f"{obj_path}/config_str"
+        build_str = get_config_str(_pc)
+
+        if os.path.isfile(str_path):
+            with open(str_path,'r') as f:
+                if build_str != f.read():
+                    silentremove(obj_path)
+                    return True
+
+    _rmart(pc)
+    os.chdir(orig_dir)
+
+
 
 #----------------------END PROJECT CONFIG--------------
 
@@ -522,17 +549,7 @@ class Project:
         self.config : ProjectConfig         = config
         self.main_target : Target           = Target(self.config.OUT_FILE,[],self)
         self.subprojects : list[Project]    = []
-        self.obj_path : str                 = f"{config.OBJ_PATH}/{os.path.relpath(config.OUT_FILE).replace('../','updir/')}"
-
-    def get_config_str(self) -> str:
-        res = [self.config.AR,self.config.COMPILER]
-        res.append(' '.join(self.config.AR_FLAGS))
-        res.append(' '.join(self.config.CFLAGS))
-        res.append(' '.join(self.config.DEFINES))
-        res.append(' '.join(self.config.EXPORT_DEFINES))
-        res.append(' '.join(self.config.PRIVATE_DEFINES))
-        res.append(' '.join(self.config.LINK_EXE_FLAGS))
-        return ' '.join(res)
+        self.obj_path : str                 = f"obj/{os.path.relpath(config.OUT_FILE).replace('../','updir/')}"
 
     def get_targets_from_d_file(self, path : str):
         '''
@@ -817,24 +834,7 @@ class Project:
             Build project
         '''
 
-        str_path = f"{self.obj_path}/config_str"
-        build_str = self.get_config_str()
-
-        write_config = False
-
-        if os.path.isfile(str_path):
-            with open(str_path,'r') as f:
-                if build_str != f.read():
-                    silentremove(self.obj_path)
-                    write_config = True
-        else:
-            write_config = True
-
-        if write_config:
-            os.makedirs(os.path.dirname(str_path),exist_ok=True)
-            with open(str_path,'w+') as f:
-                f.write(build_str)
-
+        remove_artifacts_if_config_different(self.config)
 
         self.load()
         layers = self.get_build_layers()
@@ -861,22 +861,56 @@ class Project:
                         break
                 if error:
                     break
-        if not error:
-            app_logger.info(color_text(32,'Done'))
-            return True
-        else:
+        if error:
             name = os.path.relpath(problem_task.path)
             app_logger.error(color_text(91,f'{name}: Error. Stopped.'))
             return False
 
+        def _make_config_str(p:Project):
+            os.chdir(p.config.CWD)
+            for sp in p.subprojects:
+                _make_config_str(sp)
+
+            os.makedirs(p.obj_path,exist_ok=True)
+            with open(f"{p.obj_path}/config_str",'w+') as f:
+                f.write(get_config_str(p.config))
+        orig_dir = os.getcwd()
+        _make_config_str(self)
+        os.chdir(orig_dir)
+
+        if self.config.VSCODE_CPPTOOLS_CONFIG:
+            vscode_file_path = '.vscode/c_cpp_properties.json'
+            if os.path.exists(vscode_file_path):
+                import inspect
+                build_py_filename = inspect.stack()[2].filename
+                if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
+                    return
+
+            config = {
+                'name':self.config.OUT_FILE,
+                'includePath':self.config.INCLUDE_DIRS,
+                'defines':self.config.PRIVATE_DEFINES + self.config.DEFINES
+            }
+
+            main_config = {
+                'configurations':config,
+                "version": 4
+            }
+
+            with open('.vscode/c_cpp_properties.json', 'w+') as f:
+                json.dump(main_config, f, indent=4)
+
+        app_logger.info(color_text(32,'Done'))
+        return True
+
     def clean(self):
         self.load_subprojects()
         for sp in self.subprojects:
-            os.chdir(sp.cwd)
+            os.chdir(sp.config.CWD)
             sp.clean()
-            os.chdir(self.cwd)
+            os.chdir(self.config.CWD)
 
-        shutil.rmtree(self.config.OBJ_PATH,True)
+        shutil.rmtree("obj",True)
         dirs = os.path.dirname(self.config.OUT_FILE)
         silentremove(self.config.OUT_FILE)
         if dirs:
@@ -993,34 +1027,6 @@ def gen_vscode_config():
         json.dump(launch, flaunch, indent=4)
         json.dump(tasks, ftasks, indent=4)
 
-def build(pc:ProjectConfig):
-    prj = Project(pc)
-    prj.build()
-
-    if not pc.VSCODE_CPPTOOLS_CONFIG:
-        return
-
-    vscode_file_path = '.vscode/c_cpp_properties.json'
-    if os.path.exists(vscode_file_path):
-        import inspect
-        build_py_filename = inspect.stack()[2].filename
-        if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
-            return
-
-    config = {
-        'name':pc.config.OUT_FILE,
-        'includePath':pc.config.INCLUDE_DIRS,
-        'defines':pc.config.PRIVATE_DEFINES + p.config.DEFINES
-    }
-
-    main_config = {
-        'configurations':config,
-        "version": 4
-    }
-
-    with open('.vscode/c_cpp_properties.json', 'w+') as f:
-        json.dump(main_config, f, indent=4)
-
 def process(config_fnc, tool_config_fnc=None, run_fnc=None):
     global tool_config
 
@@ -1052,7 +1058,7 @@ def process(config_fnc, tool_config_fnc=None, run_fnc=None):
             case ArgParser.outfile:     print(config[arg.values[0]].OUT_FILE)
             case ArgParser.gcvscode:    gen_vscode_config()
 
-            case ArgParser.build:       build(config[arg.values[0]])
+            case ArgParser.build:       Project(config[arg.values[0]]).build()
             case ArgParser.run:
                 if run_fnc:
                     run_fnc()
