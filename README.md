@@ -1,4 +1,4 @@
-# Mapyr v.0.5.0
+# Mapyr v.0.5.2
 
 Mapyr - is python build system GCC/clang oriented. Focused on project relationships in dependency tree.
 
@@ -35,10 +35,12 @@ if __name__ == "__main__":
 
 ```
 # Commands
-- `build [group]` - build projects in group. Default group is 'DEBUG'
-- `clean [group]` - clean projects in group
-- `name` - print output file path of first project
-- `run` - execute output file of first project
+- `build [project]` - build project. Default project 'main'
+- `clean [project]` - clean projects in group
+- `outfile [project]` - print output file path of project
+- `run [project]` - execute output file of project
+- `help` - print help
+- `gcvscode` - generate init config for vscode
 
 # Variables list
 
@@ -55,13 +57,7 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 
 - `OUT_FILE` - (str:"") - Name of out file. Name and extension defines type of file:    - executable: without extension or `.exe`    - static library:	`lib%.a`    - dynamic library:	`%.dll` or `%.so`
 
-- `GROUPS` - (list[str]:['DEBUG']) - A project can belong to several groups. Default group is DEBUGWhen build.py started without arguments, it runs build DEBUG group
-
 - `COMPILER` - (str:"clang") - Compiler, global variable, come from main project
-
-- `OBJ_PATH` - (str:"obj") - Path where store object files
-
-- `AR` - (str:"ar") - Archiver
 
 - `SRC_EXTS` - (list[str]:[".cpp",".c"]) - Source extensions for search
 
@@ -72,6 +68,8 @@ Almost all variables is optional, except `OUT_FILE`. In brackets default value i
 - `INCLUDE_DIRS` - (list[str]:[]) - Private include directories
 
 - `EXPORT_INCLUDE_DIRS` - (list[str]:[]) - Include directories that also will be sended to parent projectand parent will include them while his building process
+
+- `AR` - (str:"ar") - Archiver
 
 - `AR_FLAGS` - (list[str]:["r","c","s"]) - Archiver flags
 
@@ -171,9 +169,7 @@ def config() -> dict[str,"mapyr.ProjectConfig"]:
     p.CFLAGS  = ["-g","-O0"]
     p.LIBS = ['m']
     p.SUBPROJECTS = [
-        "lib/mathc",
-        "lib/shaderutils",
-        "lib/freetype-gl",
+        lib.any_other_lib.build.config()['main'],
         ]
 
     p.PKG_SEARCH = [
