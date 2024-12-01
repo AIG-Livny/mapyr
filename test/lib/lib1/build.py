@@ -1,15 +1,5 @@
 #!/usr/bin/python3
 
-def config() -> dict[str,"mapyr.ProjectConfig"]:
-    main = mapyr.ProjectConfig()
-    main.OUT_FILE  = "bin/liblib1.a"
-
-    return {
-        'main':main,
-    }
-
-#-----------FOOTER-----------
-# https://github.com/AIG-Livny/mapyr.git
 import mapyr
 '''
 try:
@@ -22,5 +12,14 @@ except:
     import mapyr
 '''
 
+def get_config() -> mapyr.Config:
+    cfg = mapyr.Config()
+    cfg.MAX_THREADS_NUM = 1
+    return cfg
+
+def get_project(name:str) -> "mapyr.Project|None":
+    return mapyr.create_c_project('bin/liblib1.a',export_config={'INCLUDE_DIRS' : ['src']})
+
+
 if __name__ == "__main__":
-    mapyr.process(config)
+    mapyr.process(get_project,get_config)

@@ -7,250 +7,28 @@ import logging
 import json
 import importlib.util
 import inspect
+import re
 
-VERSION = '0.5.3'
-
-#----------------------PROJECT CONFIG------------------
-
-class ProjectConfig:
-    '''
-        A config will be used for each project.
-    '''
-
-    def __init__(self) -> None:
-        self.CWD : str = caller_cwd()
-        '''
-            A start path of project.
-            By default - directory of caller script
-        '''
-
-        self.OUT_FILE : str = ""
-        '''
-            Name of out file. Name and extension defines type of file:
-                - executable: without extension or `.exe`
-                - static library:	`lib%.a`
-                - dynamic library:	`%.dll` or `%.so`
-        '''
-
-        self.COMPILER : str = "clang"
-        '''
-            Compiler, global variable, come from main project
-        '''
-
-        self.SRC_EXTS : list[str] = [".cpp",".c"]
-        '''
-            Source extensions for search
-        '''
-
-        self.SRC_DIRS : list[str] = ["src"]
-        '''
-            Source directories for NOT recursive search
-        '''
-
-        self.SRC_RECURSIVE_DIRS : list[str] = []
-        '''
-            Source directories for recursive search
-        '''
-
-        self.INCLUDE_DIRS : list[str] = []
-        '''
-            Private include directories
-        '''
-
-        self.EXPORT_INCLUDE_DIRS : list[str] = []
-        '''
-            Include directories that also will be sended to parent project
-            and parent will include them while his building process
-        '''
-
-        self.AR : str = "ar"
-        '''
-            Archiver
-        '''
-
-        self.AR_FLAGS : list[str] = ["r","c","s"]
-        '''
-            Archiver flags
-        '''
-
-        self.CFLAGS : list[str] = ["-O3"]
-        '''
-            Compile flags
-        '''
-
-        self.LINK_EXE_FLAGS : list[str] = []
-        '''
-            Flags used while executable linking
-        '''
-
-        self.SUBPROJECTS : list[ProjectConfig] = []
-        '''
-            List of projects that must be builded before and used within this project
-        '''
-
-        self.LIB_DIRS : list[str] = []
-        '''
-            Directories where looking for libraries
-        '''
-
-        self.LIBS : list[str] = []
-        '''
-            List of libraries
-        '''
-
-        self.INCLUDE_FLAGS : list[str] = []
-        '''
-            Flags that will passed to compiler in the include part of command.
-            This is automatic variable, but you can add any flag if it needed
-        '''
-
-        self.LIB_DIRS_FLAGS : list[str] = []
-        '''
-            Flags that will passed to linker in library directories part of command.
-            This is automatic variable, but you can add any flag it if needed
-        '''
-
-        self.LIBS_FLAGS : list[str] = []
-        '''
-            Flags that will passed to linker in library part of command.
-            This is automatic variable, but you can add any flag it if needed
-        '''
-
-        self.PKG_SEARCH : list[str] = []
-        '''
-            If `pkg-config` installed in system then this libraries
-            will be auto included in project
-        '''
-
-        self.SOURCES : list[str] = []
-        '''
-            Particular source files.
-            This is automatic variable, but you can add any flag if needed
-        '''
-
-        self.EXCLUDE_SOURCES : list[str] = []
-        '''
-            Sometimes need to exclude a specific source file from auto search
-            Add path to source in relative or absolute format
-        '''
-
-        self.PRIVATE_DEFINES : list[str] = []
-        '''
-            Private defines, that will be used only in this project
-        '''
-
-        self.DEFINES : list[str] = []
-        '''
-            Defines used in this project and all its children
-        '''
-
-        self.EXPORT_DEFINES : list[str] = []
-        '''
-            Defines that used in the project and also
-            will be passed to parent project
-        '''
-
-        self.MAX_THREADS_NUM : int = 10
-        '''
-            Build threads limit
-        '''
-
-        self.VSCODE_CPPTOOLS_CONFIG : bool = False
-        '''
-            Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
-        '''
-
-        self.OVERRIDE_CFLAGS : bool = False
-        '''
-            Override CFLAGS in children projects
-        '''
-
-def get_config_str(pc:ProjectConfig) -> str:
-    res = [pc.AR,pc.COMPILER]
-    res.append(' '.join(pc.AR_FLAGS))
-    res.append(' '.join(pc.CFLAGS))
-    res.append(' '.join(pc.DEFINES))
-    res.append(' '.join(pc.EXPORT_DEFINES))
-    res.append(' '.join(pc.PRIVATE_DEFINES))
-    res.append(' '.join(pc.LINK_EXE_FLAGS))
-    return ' '.join(res)
-
-def remove_artifacts_if_config_different(pc:ProjectConfig):
-    orig_dir = os.getcwd()
-    def _rmart(_pc:ProjectConfig):
-        os.chdir(_pc.CWD)
-        for spc in _pc.SUBPROJECTS:
-            _rmart(spc)
-
-        obj_path = f"obj/{os.path.relpath(_pc.OUT_FILE).replace('../','updir/')}"
-        str_path = f"{obj_path}/config_str"
-        build_str = get_config_str(_pc)
-
-        if os.path.isfile(str_path):
-            with open(str_path,'r') as f:
-                if build_str != f.read():
-                    silentremove(obj_path)
-                    return True
-
-    _rmart(pc)
-    os.chdir(orig_dir)
-
-
-
-#----------------------END PROJECT CONFIG--------------
-
-#----------------------TOOL CONFIG---------------------
-
-class ToolConfig:
-    '''
-        This config used while sertain build.py running. Config controls MAPYR features
-    '''
-
-    def __init__(self) -> None:
-        self.MINIMUM_REQUIRED_VERSION : str = VERSION
-        '''
-            Minimum required version for this config file (build.py)
-        '''
-
-        self.VERBOSITY : str = "INFO"
-        '''
-            Verbosity level for console output. Value can be any from logging module: ['CRITICAL','FATAL','ERROR','WARN','WARNING','INFO','DEBUG','NOTSET']
-        '''
-
-        self.PRINT_SIZE : bool = False
-        '''
-            Print output file size
-        '''
-
-        '''
-            Custom run function `def myfunc(prj:Project) -> None`
-            If set, function will be executed on `run` command
-        '''
-        self.CUSTOM_RUN_FUNCTION : function[Project] = None
-
-
-tool_config : ToolConfig = ToolConfig()
-
-#----------------------END TOOL CONFIG-----------------
-
-#----------------------EXCEPTIONS----------------------
-class Exceptions:
-    class CustomException(Exception):
-        def __init__(self): super().__init__(self.__doc__)
-
-    class CircularDetected(CustomException):
-        "Circular dependency detected!"
-    class OutFileEmpty(CustomException):
-        "Variable: OUT_FILE empty!"
-#----------------------END EXCEPTIONS------------------
+VERSION = '0.6.0'
 
 #----------------------LOGGING-------------------------
+
 app_logger : logging.Logger = None
 
-def setup_logger(config: ToolConfig):
+class ConsoleFormatter(logging.Formatter):
+    def __init__(self):
+        super().__init__('[%(levelname)s]: %(message)s')
+
+    def format(self, record: logging.LogRecord) -> str:
+        if record.levelno >= logging.ERROR:
+            record.msg = color_text(91,record.message)
+        if record.levelno == logging.WARNING:
+            record.msg = color_text(31,record.message)
+        return super().format(record)
+
+def setup_logger(config: 'Config'):
     global app_logger
     file_formatter = logging.Formatter('%(asctime)-15s|PID:%(process)-11s|%(levelname)-8s|%(filename)s:%(lineno)s| %(message)s')
-    console_formatter = logging.Formatter('[%(levelname)s]: %(message)s')
 
     file_path = f"{os.path.dirname(os.path.realpath(__file__))}/debug.log"
     file_handler = logging.FileHandler(file_path,'w',encoding='utf8')
@@ -258,7 +36,7 @@ def setup_logger(config: ToolConfig):
 
     console_handler = logging.StreamHandler()
     console_handler.setLevel(config.VERBOSITY)
-    console_handler.setFormatter(console_formatter)
+    console_handler.setFormatter(ConsoleFormatter())
 
     rootlog = logging.getLogger()
     rootlog.addHandler(file_handler)
@@ -270,6 +48,47 @@ def setup_logger(config: ToolConfig):
     app_logger.addHandler(console_handler)
 
 #----------------------LOGGING-------------------------
+
+#----------------------CONFIG--------------------------
+
+class Config:
+    '''
+        This config used while sertain build.py running. Config controls MAPYR features
+    '''
+
+    def __init__(self) -> None:
+        self.MAX_THREADS_NUM : int = 10
+        '''
+            Build threads limit
+        '''
+
+        self.MINIMUM_REQUIRED_VERSION : str = VERSION
+        '''
+            Minimum required version for this config file
+        '''
+
+        self.VERBOSITY : str = "INFO"
+        '''
+            Verbosity level for console output. Value can be any from logging module: ['CRITICAL','FATAL','ERROR','WARN','WARNING','INFO','DEBUG','NOTSET']
+        '''
+
+config : Config = Config()
+
+#---------------------------CONFIG---------------------
+
+#----------------------EXCEPTIONS----------------------
+
+class Exceptions:
+    class CustomException(Exception):
+        def __init__(self, add=None): super().__init__(f'{self.__doc__}{f" {add}" if add else ""}')
+    class CircularDetected(CustomException):
+        "Circular dependency detected!"
+    class ProjectNotFound(CustomException):
+        "Project not found"
+    class RuleNotFound(CustomException):
+        "Rule not found for:"
+
+#----------------------END EXCEPTIONS------------------
 
 #----------------------UTILS---------------------------
 # Color text Win/Lin
@@ -306,22 +125,28 @@ def find_files(dirs:list[str], exts:list[str], recursive=False) -> list[str]:
 
     return result
 
-def sh(cmd: list[str]) -> int:
+def sh(cmd:list[str] | str) -> int:
     '''
         Run shell command and ignore answer, but code
     '''
-    return subprocess.Popen(cmd).wait()
+    app_logger.debug(cmd)
+    if type(cmd) == list:
+        result = subprocess.run(cmd)
+    else:
+        result = subprocess.run(cmd,shell=True)
+    return result.returncode
 
-def sh_capture(cmd: list[str]) -> str:
+def sh_capture(cmd:list[str] | str) -> str:
     '''
         Run shell command and get stdin or stderr
     '''
-    run = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout,stderr = run.communicate()
-    run.wait()
-    if len(stderr) > 0:
-        return stderr.decode()
-    return stdout.decode()
+    if type(cmd) == list:
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+    else:
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, encoding='utf-8')
+    if len(result.stderr) > 0:
+        return result.stderr
+    return result.stdout
 
 def silentremove(filename):
     '''
@@ -364,7 +189,7 @@ def unique_list(l:list):
             result.append(v)
     return result
 
-def get_config(path:str) -> dict[str,ProjectConfig]:
+def get_config(path:str) -> list['Project']:
     '''
         Load configs from other build script
     '''
@@ -383,554 +208,567 @@ def caller_cwd() -> str:
     '''
         Path to caller script directory
     '''
-    return os.path.dirname(os.path.abspath(inspect.stack()[2][1]))
+    for frame in inspect.stack():
+        path = frame[1]
+        if path != __file__:
+            return os.path.dirname(os.path.abspath(path))
+    raise RuntimeError('frame not found')
+
+def extend_config(dst:dict[str,],src:dict[str,]):
+    for key in src.keys():
+        if key not in dst:
+            dst[key] = src[key]
+            continue
+
+        if type(src[key]) != type(dst[key]):
+            continue
+
+        if type(dst[key]) is list:
+            dst[key].extend(src[key])
+            dst[key] = unique_list(dst[key])
+
+def abspath_project(prj:'Project', path) -> str:
+    '''
+        Return absolute path relative project and not CWD
+        It made to keep CWD as is
+    '''
+    return path if os.path.isabs(path) else f'{prj.CWD}/{path}'
+
+def relpath_project(prj:'Project', path) -> str:
+    return os.path.relpath(path,prj.CWD)
+
+def make_cpp_properties(p:'Project',cfg:'CConfig'):
+    vscode_file_path = f'{p.CWD}/.vscode/c_cpp_properties.json'
+    if os.path.exists(vscode_file_path):
+        import inspect
+        build_py_filename = inspect.stack()[2].filename
+        if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
+            return
+
+    config = {
+        'name':p.TARGET,
+        'includePath':cfg.INCLUDE_DIRS,
+        'defines':cfg.DEFINES
+    }
+
+    main_config = {
+        'configurations':config,
+        "version": 4
+    }
+
+    with open(vscode_file_path, 'w+') as f:
+        json.dump(main_config, f, indent=4)
 
 #----------------------END UTILS-----------------------
 
-#----------------------COMMAND-------------------------
-class Command:
-    '''
-        Command unit contains comand line + console message format
-    '''
+#---------------------------RULE-----------------------
 
-    mfLinkStatic = f"{color_text(33,'Linking static')}: {{}}"
-    mfLinkExe    = f"{color_text(32,'Linking executable')}: {{}}"
-    mfBuild      = f"{color_text(94,'Building')}: {{}}"
+class Rule:
+    def __init__(self, parent:'Project', regexp_targets:str|list[str]|set[str], prerequisites:str|list['str']|set['str'] = [], phony=False) -> None:
+        self.regexp_targets : list[str] = [regexp_targets] if type(regexp_targets) is str else list(regexp_targets)
+        self.prerequisites : list[str] = [prerequisites] if type(prerequisites) is str else list(prerequisites)
 
-    def __init__(self, parent_target:"Target", cmd:list[str], message_format:str) -> None:
-        self.parent_target = parent_target
-        self.cmd = cmd
-        self.message_format = message_format
+        self.phony = phony
+        self.parent : Project = parent
+        self.build_layer :int = 0
+        self.target_build_list : list[str] = []
 
-    def run(self, ) -> int:
-        name = os.path.relpath(self.parent_target.path)
-        app_logger.info(self.message_format.format(name))
-        app_logger.debug(f'{name} run: {self.cmd}')
-        return sh(self.cmd)
-
-#----------------------END COMMAND---------------------
-
-#----------------------TARGET--------------------------
-class Target:
-    '''
-        Target file.
-        `path` - target path with file name.
-        `prerequisites` - all other files that must be builded before.
-        `parent` - project to which this target belongs.
-        `need_build` - if target have to be built.
-    '''
-    def __init__(self, path:str, prerequisites : list["Target"], parent:"Project", need_build:bool=False) -> None:
-        self.path           : str           =  os.path.abspath(path)
-        self.prerequisites  : list[Target]  = prerequisites
-        self.parent         : Project       = parent
-        self.need_build     : bool          = need_build
-
-    def get_cmd(self) -> Command:
-        '''
-            Return command to build this target
-        '''
-        p = self.parent
-        def _cmd_link_exe() -> Command:
-            p.config.LIB_DIRS_FLAGS.extend([f"-L{x}" for x in p.config.LIB_DIRS])
-            p.config.LIBS_FLAGS.extend([f"-l{x}" for x in p.config.LIBS])
-            p.config.LIB_DIRS_FLAGS = p.config.LIB_DIRS_FLAGS
-            p.config.LIBS_FLAGS = p.config.LIBS_FLAGS
-
-            obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
-            cmd = [p.config.COMPILER]+p.config.LINK_EXE_FLAGS+p.config.LIB_DIRS_FLAGS+obj+['-o',self.path]+p.config.LIBS_FLAGS
-            return Command(self, cmd, Command.mfLinkExe)
-
-        def _cmd_link_static() -> Command:
-            obj = [x.path for x in self.prerequisites if x.path.endswith('.o')]
-            cmd = [p.config.AR]+[''.join(p.config.AR_FLAGS)]+[self.path]+obj
-            return Command(self, cmd, Command.mfLinkStatic)
-
-        def _cmd_build_c(source:str) -> Command:
-            # mapyr special flags
-            p.config.CFLAGS.append(f'-D__MAPYR__FILENAME__="{os.path.basename(source)}"')
-
-            # flags
-            p.config.CFLAGS.extend([f"-D{x}" for x in p.config.PRIVATE_DEFINES])
-            p.config.CFLAGS.extend([f"-D{x}" for x in p.config.DEFINES])
-            p.config.INCLUDE_FLAGS.extend([f"-I{x}" for x in p.config.INCLUDE_DIRS])
-            p.config.CFLAGS = p.config.CFLAGS
-            p.config.INCLUDE_FLAGS = p.config.INCLUDE_FLAGS
-
-            basename = os.path.splitext(self.path)[0]
-            depflags = ['-MT',self.path,'-MMD','-MP','-MF',f"{basename}.d"]
-            cmd = [p.config.COMPILER]+depflags + p.config.CFLAGS
-            cmd += p.config.INCLUDE_FLAGS +['-c','-o',self.path,source]
-            return Command(self, cmd, Command.mfBuild)
-
-        ext_trg = os.path.splitext(self.path)[1]
-        match(ext_trg):
-            case '' | '.exe': return _cmd_link_exe()
-            case '.a': return _cmd_link_static()
-            case '.o':
-                for prq in self.prerequisites:
-                    ext_prq = os.path.splitext(prq.path)[1]
-                    match(ext_prq):
-                        case '.c' | '.cc' | '.cpp': return _cmd_build_c(prq.path)
-
-        app_logger.error(f"{color_text(91,'Not found cmd builder for')}: {os.path.relpath(self.path)}")
-        exit()
-
-    def build(self) -> int:
-        '''
-            Build target. If it is main target and PRINT_SIZE true,
-            so it can print file size difference
-        '''
-        if tool_config.PRINT_SIZE:
-            if self.parent.main_target is self:
-                old_size = 0
-                if os.path.exists(self.path):
-                    old_size=os.stat(self.path).st_size
-
-                code = self.get_cmd().run()
-
-                if code == 0:
-                    new_size=os.stat(self.path).st_size
-                    app_logger.info(f'{os.path.relpath(self.path)} size {new_size} {f"[{diff(old_size,new_size)}]" if old_size else ""}')
-
-                return code
-        return self.get_cmd().run()
+    def execute(self, target:str) -> int:
+        raise NotImplementedError()
 
     def __repr__(self) -> str:
-        return f'{self.path}:{self.prerequisites}'
+        return f'{self.regexp_targets}:{self.prerequisites}'
 
-#----------------------END TARGET----------------------
+#---------------------------END RULE-------------------
 
-#----------------------TARGET CONTAINER----------------
-class TargetContainer:
-    def __init__(self) -> None:
-        self.targets : list[Target] = []
-
-    def find_target(self, path: str) -> Target:
-        '''
-            Find target by out file
-        '''
-        path = os.path.abspath(path)
-
-        for t in self.targets:
-            if path == t.path:
-                return t
-        return None
-
-    def add(self, t:Target) -> Target:
-        '''
-            Add target or extend prerequisites if target already exists
-        '''
-        found = self.find_target(t.path)
-        if found:
-            for prq in t.prerequisites:
-                if prq not in found.prerequisites:
-                    self.add(prq)
-                    found.prerequisites.append(prq)
-            return found
-        else:
-            self.targets.append(t)
-            return t
-
-    def add_from_container(self, cnt:"TargetContainer"):
-        '''
-            Add targets from other container
-        '''
-        for t in cnt.targets:
-            self.add(t)
-
-#----------------------END TARGET CONTAINER------------
-
-#----------------------PROJECT-------------------------
+#---------------------------PROJECT--------------------
 
 class Project:
-    '''
-        Project contain all data needed to build the project
-        `targets` - its own targets
-        `targets_recursive` - own targets and all children recursive targets
-        `config` - configuration
-        `cwd` - working directory of project
-    '''
-    def __init__(self, config:ProjectConfig) -> None:
-        self.targets                        = TargetContainer()
-        self.targets_recursive              = TargetContainer()
-        self.config : ProjectConfig         = config
-        self.main_target : Target           = Target(self.config.OUT_FILE,[],self)
-        self.subprojects : list[Project]    = []
-        self.obj_path : str                 = f"obj/{os.path.relpath(config.OUT_FILE).replace('../','updir/')}"
+    def __init__(self, target_path:str) -> None:
+        self.CWD : str = caller_cwd()
 
-    def get_targets_from_d_file(self, path : str):
+        self.TARGET : str = target_path if os.path.isabs(target_path) else f'{self.CWD}/{target_path}'
+
         '''
-            Get targets from .d file - is usual format of dependency files
-            for c/cpp compilers
+            A start path of project.
+            By default - directory of caller script
         '''
 
-        result = []
-        if not os.path.isfile(path):
-            return result
+        self.PRIVATE_CONFIG : dict[str,] = dict()
+        self.CONFIG : dict[str,] = dict()
+        self.EXPORT_CONFIG : dict[str,] = dict()
 
-        with open(path,'r') as f:
-            content = f.read()
-
-        # make list[str] = ["/dir/targtet:src1.c src2.c src3.c", ...]
-        content = content.replace('\\\n','')
-        content = content.replace('\n\n','\n')
-        content = content.replace('   ',' ')
-        content = content.split('\n')
-
-        for line in content:
-            if not line:
-                continue
-            spl = line.split(':')
-            if len(spl) < 2:
-                continue
-
-            prerequisites = spl[1].split(' ')
-            path = os.path.abspath(spl[0])
-            preq : list[Target] = []
-            for prq in prerequisites:
-                if prq:
-                    prq_target = self.targets.add(Target(os.path.abspath(prq),[],self))
-                    preq.append(prq_target)
-
-            self.targets.add(Target(path,preq,self))
-
-    def find_targets_contains_prerequisite(self,target:Target) -> list[Target]:
+        self.RULES : list[Rule] = []
         '''
-            Find all targets that contain `path` in them prerequisites that need build
-        '''
-        result=[]
-        for trg in self.targets_recursive.targets:
-            if trg.need_build:
-                continue
-            if target in trg.prerequisites:
-                result.append(trg)
-        return result
-
-    def check_if_need_build(self):
-        '''
-            Check and set `need_build` variable
         '''
 
-        def _need_build(target:Target) -> bool:
-            '''
-                If target file not exists or prerequisites files newer than target
-            '''
-            if not os.path.exists(target.path):
-                return True
-            target_time = os.path.getmtime(target.path)
+        self.SUBPROJECTS : list[Project] = []
+        self.ALL_RULES : list [Rule] = []
+        self.BEFORE_RUN_BUILD_CALLBACK = None
 
-            for prq in target.prerequisites:
-                if os.path.exists(prq.path):
-                    prq_time = os.path.getmtime(prq.path)
-                    if prq_time > target_time:
-                        return True
+
+    def get_rule(self, project:'Project', target_path:str) -> Rule|None:
+        rules = self.ALL_RULES if self.ALL_RULES else self.RULES
+
+        # First, looking for exact match
+        for rule in rules:
+            for target in rule.regexp_targets:
+                if target == target_path:
+                    return rule
+
+        # Second, looking for regex rules
+        for rule in rules:
+            for regexp in rule.regexp_targets:
+                # Regex match only for owner project
+                if project != rule.parent:
+                    continue
+
+                if re.match(regexp, target_path):
+                    return rule
+        return None
+
+    def build(self, target_path:str = None) -> bool:
+        global config
+
+        if target_path is None:
+            target_path = self.TARGET
+
+        def _load_subprojects(p:Project):
+            p.ALL_RULES.extend(p.RULES)
+
+            for sp in p.SUBPROJECTS:
+                _load_subprojects(sp)
+
+                p.ALL_RULES.extend(sp.RULES)
+
+                # Config master -> slave
+                extend_config(sp.CONFIG, p.CONFIG)
+
+                # Config master -> slave private
+                extend_config(sp.PRIVATE_CONFIG, p.CONFIG)
+
+                # Config master private <- slave export
+                extend_config(p.PRIVATE_CONFIG, sp.EXPORT_CONFIG)
+
+                # Config master <- slave export
+                extend_config(p.EXPORT_CONFIG, sp.EXPORT_CONFIG)
+
+            # Summary config
+            extend_config(p.CONFIG, p.EXPORT_CONFIG)
+
+        _load_subprojects(self)
+
+        if self.BEFORE_RUN_BUILD_CALLBACK:
+            self.BEFORE_RUN_BUILD_CALLBACK(self)
+
+        rules_in = []
+        def _get_build_layer(p:Project, _target:str) -> int:
+            rule = self.get_rule(p, _target)
+
+            if not rule:
+                raise Exceptions.RuleNotFound(_target)
+
+            if not rule.prerequisites:
+                return 0
+
+            if rule in rules_in:
+                raise Exceptions.CircularDetected()
+            rules_in.append(rule)
+
+            if not rule.phony:
+                out_file_exists = os.path.exists(_target)
+
+            max_child_build_layer = 0
+            need_build = False
+            for prq in rule.prerequisites:
+                prq_layer = _get_build_layer(rule.parent, prq)
+                if prq_layer > max_child_build_layer:
+                    max_child_build_layer = prq_layer
+
+                # If children will builds then we will build too
+                if max_child_build_layer:
+                    need_build = True
                 else:
-                    return True
+                    need_build = False
+                    if out_file_exists:
+                        out_date = os.path.getmtime(_target)
+                        src_date = os.path.getmtime(prq)
+                        if src_date > out_date:
+                            need_build = True
+                    else:
+                        need_build = True
+
+            if need_build:
+                rule.build_layer = max_child_build_layer + 1
+                if _target not in rule.target_build_list:
+                    rule.target_build_list.append(_target)
+
+            rules_in.pop()
+            return rule.build_layer
+
+        try:
+            layers_num = _get_build_layer(self, target_path)
+        except Exception as e:
+            app_logger.error(str(e))
             return False
 
-        def _set_parents_need_build(target : Target):
-            '''
-                Set all parents `need_build` recursive
-            '''
-            parents = self.find_targets_contains_prerequisite(target)
-            for par in parents:
-                par.need_build = True
-                _set_parents_need_build(par)
-
-        # check if children rebuilds, so parents need rebuild too
-        for target in self.targets_recursive.targets:
-            if not target.need_build and _need_build(target):
-                target.need_build = True
-                _set_parents_need_build(target)
-
-    def get_build_layers(self) -> list[list[Target]]:
-        '''
-            Return list of layers. Layer is bunch of targets that can be built parralel
-        '''
-        self.load_targets_recursive()
-        self.check_if_need_build()
-
-        # remove targets that not need to build
-        torem = []
-        for target in self.targets_recursive.targets:
-            if not target.need_build:
-                torem.append(target)
-        for target in torem:
-            self.targets_recursive.targets.remove(target)
-
-        def _pop_layer() -> list[Target]:
-            '''
-                Return targets that can be built right now.
-                If all prerequisites not need to build then we can build this target.
-                So, these targets we can build parallel -> in one layer
-            '''
-            layer : set[Target] = set()
-            for target in self.targets_recursive.targets:
-                for prq in target.prerequisites:
-                    if prq.need_build:
-                        break
-                else:
-                    layer.add(target)
-
-            return list(layer)
-
-        result : list[list[Target]] = []
-
-        layer = _pop_layer()
-        while(len(layer) > 0):
-            for target in layer:
-                self.targets_recursive.targets.remove(target)
-                target.need_build = False
-            result.append(layer)
-            layer = _pop_layer()
-        return result
-
-    def load(self):
-        '''
-            Load project variables, init subproject's configs
-        '''
-        self.main_target = None
-        self.targets.targets = []
-        self.targets_recursive.targets = []
-        self.load_subprojects()
-        unique_list(self.config.CFLAGS)
-
-        if not self.config.OUT_FILE:
-            raise Exceptions.OutFileEmpty()
-
-        # Setup default variables in config
-        if not self.config.INCLUDE_DIRS:
-            self.config.INCLUDE_DIRS = self.config.SRC_DIRS
-        if not self.config.EXPORT_INCLUDE_DIRS:
-            self.config.EXPORT_INCLUDE_DIRS = self.config.INCLUDE_DIRS
-
-        # Add exporting defines to defines
-        self.config.DEFINES.extend(self.config.EXPORT_DEFINES)
-
-        # Set absolute paths
-        def _set_abs(l:list[str]):
-            for i in range(len(l)):
-                l[i] = os.path.abspath(l[i])
-
-        _set_abs(self.config.INCLUDE_DIRS)
-        _set_abs(self.config.EXPORT_INCLUDE_DIRS)
-
-        # Looking for sources, exclude specified source files
-        self.config.SOURCES += find_files(self.config.SRC_DIRS, self.config.SRC_EXTS)
-        self.config.SOURCES += find_files(self.config.SRC_RECURSIVE_DIRS, self.config.SRC_EXTS, recursive=True)
-        self.config.EXCLUDE_SOURCES = [os.path.abspath(x) for x in self.config.EXCLUDE_SOURCES]
-        self.config.SOURCES = [x for x in self.config.SOURCES if x not in self.config.EXCLUDE_SOURCES]
-        self.config.LIB_DIRS = [os.path.abspath(x) for x in self.config.LIB_DIRS]
-
-        '''
-            Create targets from sources.
-            All object files must be in OBJ directory
-            if source path is relative and contain `../`
-            so it will be replaces by 'updir/' this allow stay in OBJ folder
-        '''
-        object_targets = []
-        deps = []
-        for src in self.config.SOURCES:
-            path = f"{self.obj_path}/{os.path.relpath(src).replace('../','updir/')}"
-            spl = os.path.splitext(path)
-            obj = f"{spl[0]}.o"
-            dep = f"{spl[0]}.d"
-            deps.append(dep)
-            src_target = self.targets.add(Target(src,[],self))
-            obj_target = self.targets.add(Target(obj,[src_target],self))
-            object_targets.append(obj_target)
-
-        # Main target
-        self.main_target = self.targets.add(Target(self.config.OUT_FILE,object_targets,self))
-
-        # Load targets from .d files if they present
-        for d in deps:
-            self.get_targets_from_d_file(d)
-
-        '''
-            Load data from subprojects
-            chdir is for right abspath work
-        '''
-        for sp in self.subprojects:
-            os.chdir(sp.config.CWD)
-            sp_path = os.path.abspath(sp.config.OUT_FILE)
-            self.main_target.prerequisites.append(sp.main_target)
-            fname = os.path.basename(sp.config.OUT_FILE)
-
-            # Pass export defines up
-            self.config.EXPORT_DEFINES.extend(sp.config.EXPORT_DEFINES)
-
-            # Accept exported defines
-            self.config.PRIVATE_DEFINES.extend(sp.config.EXPORT_DEFINES)
-
-            # Pass defines to children
-            sp.config.DEFINES.extend(self.config.DEFINES)
-
-            # Override CFLAGS if set in main target
-            if self.main_target.parent.config.OVERRIDE_CFLAGS:
-                sp.config.CFLAGS = self.main_target.parent.config.CFLAGS
-
-            self.config.LIBS.extend(sp.config.LIBS)
-            self.config.LIB_DIRS.extend(sp.config.LIB_DIRS)
-
-            self.config.PKG_SEARCH.extend(sp.config.PKG_SEARCH)
-
-            # Libraries
-            if fname.startswith('lib') and fname.endswith('.a'):
-                lib = fname[3:-2]
-                self.config.LIBS.insert(0,lib)
-                self.config.LIB_DIRS.append(os.path.dirname(sp_path))
-                spe = [os.path.abspath(x) for x in sp.config.EXPORT_INCLUDE_DIRS]
-                self.config.INCLUDE_DIRS.extend(spe)
-            os.chdir(self.config.CWD)
-
-
-        # Load libs data from pkg-config
-        unique_list(self.config.PKG_SEARCH)
-        if self.config.PKG_SEARCH:
-            out = sh_capture(["pkg-config","--cflags","--libs"]+list(self.config.PKG_SEARCH))
-            if not out.startswith('-'):
-                if "command not found" in out:
-                    app_logger.error(color_text(31,f"Project {self.cwd}: PKG_SEARCH present, but pkg-config not found"))
-                if "No package" in out:
-                    app_logger.error(color_text(31,f"Project {self.cwd}: {out}"))
-            else:
-                out = out.replace('\n','')
-                spl = out.split(' ')
-                self.config.INCLUDE_FLAGS.extend([x for x in spl if x.startswith('-I')])
-                self.config.LIB_DIRS_FLAGS.extend([x for x in spl if x.startswith('-L')])
-                self.config.LIBS_FLAGS.extend([x for x in spl if x.startswith('-l')])
-
-        unique_list(self.config.DEFINES)
-        unique_list(self.config.INCLUDE_DIRS)
-        unique_list(self.config.EXPORT_DEFINES)
-        unique_list(self.config.PRIVATE_DEFINES)
-        unique_list(self.config.LIB_DIRS_FLAGS)
-
-    def load_targets_recursive(self):
-        '''
-            Load all subproject targets recursive
-        '''
-        def _get_targets(p:Project) -> TargetContainer:
-            result = TargetContainer()
-            for prj in p.subprojects:
-                targs = _get_targets(prj)
-                for t in targs.targets:
-                    result.add(t)
-
-            result.add_from_container(p.targets)
-            return result
-
-        self.targets_recursive.add_from_container(_get_targets(self))
-
-    def load_subprojects(self):
-        self.subprojects = []
-        for spc in self.config.SUBPROJECTS:
-            try:
-                sp = Project(spc)
-                orig_dir = os.getcwd()
-                os.chdir(spc.CWD)
-                sp.load()
-                os.chdir(orig_dir)
-                self.subprojects.append(sp)
-            except Exception as e:
-                app_logger.error(color_text(31,f"Subproject {spc.OUT_FILE}: {e}"))
-
-    def build(self) -> bool:
-        '''
-            Build project
-        '''
-
-        remove_artifacts_if_config_different(self.config)
-
-        self.load()
-        layers = self.get_build_layers()
-
-        if not layers:
+        if layers_num == 0:
             app_logger.info('Nothing to build')
             return True
 
-        for layer in layers:
-            layer : list[Target]
+        cc = os.cpu_count()
+        threads_num = cc if config.MAX_THREADS_NUM > cc else config.MAX_THREADS_NUM
+        error : bool = False
+        for layer_num in range(1,layers_num+1):
+            layer : list[Rule] = [x for x in self.ALL_RULES if x.build_layer == layer_num]
 
-            # create directories
-            for t in layer:
-                os.makedirs(os.path.dirname(t.path),exist_ok=True)
+            problem_rule : Rule = None
 
-            error = False
-            problem_task = None
-            with concurrent.futures.ProcessPoolExecutor(max_workers=self.config.MAX_THREADS_NUM) as executor:
-                builders = [executor.submit(t.build) for t in layer]
+            with concurrent.futures.ProcessPoolExecutor(max_workers=threads_num) as executor:
+                builders = []
+                for rule in layer:
+                    for target in rule.target_build_list:
+                        builders.append(executor.submit(rule.execute, target))
+
                 for i in range(len(builders)):
                     if builders[i].result() != 0:
                         error = True
-                        problem_task=layer[i]
+                        problem_rule=layer[i]
                         break
                 if error:
                     break
         if error:
-            name = os.path.relpath(problem_task.path)
-            app_logger.error(color_text(91,f'{name}: Error. Stopped.'))
+            app_logger.error(f'{problem_rule.regexp_targets[0]}: Error. Stopped.')
             return False
-
-        def _make_config_str(p:Project):
-            os.chdir(p.config.CWD)
-            for sp in p.subprojects:
-                _make_config_str(sp)
-
-            os.makedirs(p.obj_path,exist_ok=True)
-            with open(f"{p.obj_path}/config_str",'w+') as f:
-                f.write(get_config_str(p.config))
-        orig_dir = os.getcwd()
-        _make_config_str(self)
-        os.chdir(orig_dir)
-
-        if self.config.VSCODE_CPPTOOLS_CONFIG:
-            vscode_file_path = '.vscode/c_cpp_properties.json'
-            if os.path.exists(vscode_file_path):
-                import inspect
-                build_py_filename = inspect.stack()[2].filename
-                if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
-                    return
-
-            config = {
-                'name':self.config.OUT_FILE,
-                'includePath':self.config.INCLUDE_DIRS,
-                'defines':self.config.PRIVATE_DEFINES + self.config.DEFINES
-            }
-
-            main_config = {
-                'configurations':config,
-                "version": 4
-            }
-
-            with open('.vscode/c_cpp_properties.json', 'w+') as f:
-                json.dump(main_config, f, indent=4)
 
         app_logger.info(color_text(32,'Done'))
         return True
 
     def clean(self):
-        self.load_subprojects()
-        for sp in self.subprojects:
-            os.chdir(sp.config.CWD)
-            sp.clean()
-            os.chdir(self.config.CWD)
+        def _del_from_proj(p:Project):
+            for sp in p.SUBPROJECTS:
+                _del_from_proj(sp)
 
-        shutil.rmtree("obj",True)
-        dirs = os.path.dirname(self.config.OUT_FILE)
-        silentremove(self.config.OUT_FILE)
-        if dirs:
-            shutil.rmtree(dirs,True)
+            for rule in p.RULES:
+                for target in rule.regexp_targets:
+                    if target == p.TARGET:
+                        continue
 
-    def run(self):
-        self.build()
-        sh(f'./{self.config.OUT_FILE}')
+                    if os.path.exists(target):
+                        silentremove(target)
+
+        _del_from_proj(self)
 
     def __repr__(self) -> str:
-        return self.config.OUT_FILE
+        return self.TARGET
 
 #----------------------END PROJECT---------------------
+
+#----------------------C-------------------------------
+
+class RuleC(Rule):
+    def __init__(self, parent:'Project'):
+        super().__init__(parent,r'.*\.c')
+
+class RuleH(Rule):
+    def __init__(self, parent:'Project'):
+        super().__init__(parent,r'.*\.h')
+
+class RuleO(Rule):
+    def execute(self, target:str) -> int:
+        app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(self.prerequisites[0])}")
+
+        if not os.path.exists(target):
+            os.makedirs(os.path.dirname(target),exist_ok=True)
+
+        cfg = CConfig(self.parent.PRIVATE_CONFIG)
+
+        self.cmd = \
+            [cfg.COMPILER,'-MT','','-MMD','-MP','-MF',''] \
+            + cfg.CFLAGS \
+            + [f"-D{x}" for x in cfg.DEFINES] \
+            + [f"-I{x}" for x in cfg.INCLUDE_DIRS] \
+            + ['-c','-o','','']
+
+        path_wo_ext     = os.path.splitext(target)[0]
+        self.cmd[2]     = self.prerequisites[0]
+        self.cmd[6]     = f"{path_wo_ext}.d"
+        self.cmd[-2]    = target
+        self.cmd[-1]    = self.prerequisites[0]
+        # mapyr special flags
+        self.cmd.insert(7, f'-D__MAPYR__FILENAME__="{os.path.basename(self.prerequisites[0])}"')
+        return sh(self.cmd)
+
+class RuleExe(Rule):
+    def execute(self, target:str) -> int:
+        app_logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(target)}")
+
+        if not os.path.exists(target):
+            os.makedirs(os.path.dirname(target),exist_ok=True)
+
+        cfg = CConfig(self.parent.PRIVATE_CONFIG)
+
+        self.cmd = [cfg.COMPILER] \
+        + cfg.LINK_FLAGS \
+        + [f"-L{x}" for x in cfg.LIB_DIRS] \
+        + self.prerequisites \
+        + ['-o',self.parent.TARGET] \
+        + [f"-l{x}" for x in cfg.LIBS]
+
+        if cfg.VSCODE_CPPTOOLS_CONFIG:
+            make_cpp_properties(self.parent, cfg)
+
+        with open(f"{self.parent.PRIVATE_CONFIG['OBJ_PATH']}/config_str",'w+') as f:
+            f.write(get_c_build_config_str(self.parent.PRIVATE_CONFIG))
+
+        return sh(self.cmd)
+
+class RuleStatic(Rule):
+    def execute(self, target:str) -> int:
+        app_logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(target)}")
+
+        if not os.path.exists(target):
+            os.makedirs(os.path.dirname(target),exist_ok=True)
+
+        cfg = CConfig(self.parent.CONFIG)
+
+        self.cmd = [cfg.AR] \
+        + [''.join(cfg.AR_FLAGS)] \
+        + [target] \
+        + self.prerequisites
+
+        if cfg.VSCODE_CPPTOOLS_CONFIG:
+            make_cpp_properties(self.parent, cfg)
+
+        with open(f"{self.parent.PRIVATE_CONFIG['OBJ_PATH']}/config_str",'w+') as f:
+            f.write(get_c_build_config_str(self.parent.PRIVATE_CONFIG))
+
+        return sh(self.cmd)
+
+class CConfig():
+    def __init__(self, init:dict[str,] = None) -> None:
+        self.INCLUDE_DIRS : list[str] = []
+        '''
+            Include directories for this project and children
+        '''
+
+        self.COMPILER : str = 'clang'
+        '''
+            Compiler exe name
+        '''
+
+        self.AR : str = 'ar'
+        '''
+            Archiver
+        '''
+
+        self.AR_FLAGS : list[str] = ['r','c','s']
+        '''
+            Archiver flags
+        '''
+
+        self.CFLAGS : list[str] = []
+        '''
+            Compile flags
+        '''
+
+        self.LINK_FLAGS : list[str] = []
+        '''
+            Flags used while linking
+        '''
+
+        self.LIB_DIRS : list[str] = []
+        '''
+            Directories where looking for libraries
+        '''
+
+        self.LIBS : list[str] = []
+        '''
+            List of libraries
+        '''
+
+        self.PKG_SEARCH : list[str] = []
+        '''
+            If `pkg-config` present in system this libraries
+            will be auto included in project
+        '''
+
+        self.DEFINES : list[str] = []
+        '''
+            Defines used in this project and all its children
+        '''
+
+        self.SOURCES : list[str] = []
+        '''
+        '''
+
+        self.OBJ_PATH : str = "obj"
+        '''
+        '''
+
+        self.VSCODE_CPPTOOLS_CONFIG : bool = False
+        '''
+            Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
+        '''
+
+        if init:
+            self.__dict__.update(init)
+
+def get_c_build_config_str(config:dict[str,]) -> str:
+    '''
+        Config string need to sign config of built files
+        If any flag, that influences on the result file was changed then need to rebuild all targets
+    '''
+    return str([config[key] for key in ['AR','COMPILER','CFLAGS','DEFINES','LINK_FLAGS'] if key in config])
+
+def set_c_config_paths_absolute(prj:Project, config:dict[str,]):
+    for key in config.keys():
+        if key in ['LIB_DIRS','INCLUDE_DIRS','SOURCES']:
+            config[key] = [abspath_project(prj, x) for x in config[key]]
+        if key == 'OBJ_PATH':
+            config[key] = abspath_project(prj, config[key])
+
+def get_rules_from_d_file(p:Project, path : str):
+    result = []
+    if not os.path.isfile(path):
+        return result
+
+    with open(path,'r') as f:
+        content = f.read()
+
+    # make list[str] = ["/dir/targtet:src1.c src2.c src3.c", ...]
+    content = content.replace('\\\n','')
+    content = content.replace('\n\n','\n')
+    content = content.replace('   ',' ')
+    content = content.split('\n')
+
+    for line in content:
+        if not line:
+            continue
+        spl = line.split(':')
+        if len(spl) < 2 or not spl[1]:
+            continue
+
+        target = spl[0]
+        prerequisites = [x for x in spl[1].strip().split(' ') if x != target]
+        for rule in p.RULES:
+            if target in rule.prerequisites:
+                for prq in prerequisites:
+                    if prq not in rule.prerequisites:
+                        rule.prerequisites.append(prq)
+
+def pkg_config_search(config:dict[str,]):
+    # Load libs data from pkg-config
+    if 'PKG_SEARCH' in config and config['PKG_SEARCH']:
+        out = sh_capture(["pkg-config","--cflags","--libs"]+config['PKG_SEARCH'])
+        if not out.startswith('-'):
+            if "command not found" in out:
+                raise RuntimeError("PKG_SEARCH present, but pkg-config not found")
+            if "No package" in out:
+                raise RuntimeError(out)
+        else:
+            out = out.replace('\n','')
+            spl = out.split(' ')
+            inc_dirs = [x[2:] for x in spl if x.startswith('-I')]
+            lib_dirs = [x[2:] for x in spl if x.startswith('-L')]
+            libs     = [x[2:] for x in spl if x.startswith('-l')]
+
+            config['INCLUDE_DIRS']  = config['INCLUDE_DIRS'] + inc_dirs if 'INCLUDE_DIRS' in config else inc_dirs
+            config['LIB_DIRS']      = config['LIB_DIRS'] + lib_dirs     if 'LIB_DIRS' in config else lib_dirs
+            config['LIBS']          = config['LIBS'] + libs             if 'LIBS' in config else libs
+
+def before_run_build_c(prj:Project):
+    def rm_artifacts(p:Project):
+        for sp in p.SUBPROJECTS:
+            rm_artifacts(sp)
+
+        cfg_path = f'{p.PRIVATE_CONFIG["OBJ_PATH"]}/config_str'
+        rm = False
+        if os.path.exists(cfg_path):
+            with open(cfg_path, 'r') as f:
+                if f.read() != get_c_build_config_str(p.PRIVATE_CONFIG):
+                    rm = True
+        if rm:
+            silentremove(p.PRIVATE_CONFIG["OBJ_PATH"])
+
+    rm_artifacts(prj)
+
+def create_c_project(target_file:str, src_dirs = ['src'], src_extensions=['.c'], subprojects:list[Project]=[],
+                     export_config:dict[str,]={}, config:dict[str,]={}, private_config:dict[str,]={}) -> Project:
+
+    p = Project(target_file)
+    p.BEFORE_RUN_BUILD_CALLBACK = before_run_build_c
+
+    set_c_config_paths_absolute(p,export_config)
+    set_c_config_paths_absolute(p,config)
+    set_c_config_paths_absolute(p,private_config)
+
+    try:
+        pkg_config_search(export_config)
+        pkg_config_search(config)
+        pkg_config_search(private_config)
+    except Exception as e:
+        app_logger.error(f'Project {target_file}: {e}')
+        exit()
+
+    p.EXPORT_CONFIG = export_config
+    p.PRIVATE_CONFIG = private_config
+    p.CONFIG = config
+
+    extend_config(p.PRIVATE_CONFIG, p.CONFIG)
+    extend_config(p.PRIVATE_CONFIG, p.EXPORT_CONFIG)
+
+    p.RULES.append(RuleC(p))
+    p.RULES.append(RuleH(p))
+
+    obj_path = private_config['OBJ_PATH'] if 'OBJ_PATH' in private_config else abspath_project(p,'obj')
+    p.PRIVATE_CONFIG['OBJ_PATH'] = obj_path
+
+    obj_path = abspath_project(p,obj_path)
+    src_dirs = [abspath_project(p,x) for x in src_dirs]
+    sources = find_files(src_dirs,src_extensions)
+    if 'SOURCES' in private_config:
+        sources.extend(private_config['SOURCES'])
+
+    sources = unique_list(sources)
+
+    objects = []
+    for src in sources:
+        artefact = f'{obj_path}/{os.path.splitext(relpath_project(p,src).replace("../","updir/"))[0]}'
+        object = f'{artefact}.o'
+        dep = f'{artefact}.d'
+        p.RULES.append(RuleO(p,object,src))
+        objects.append(object)
+        get_rules_from_d_file(p,dep)
+
+    if p.TARGET.endswith('.a'):
+        target_rule = RuleStatic(p, p.TARGET, objects)
+    else:
+        target_rule = RuleExe(p, p.TARGET, objects)
+
+    p.RULES.append(target_rule)
+
+    if subprojects:
+        p.SUBPROJECTS.extend(subprojects)
+        for sp in subprojects:
+            target_rule.prerequisites.append(sp.TARGET)
+
+    return p
+
+#----------------------END C---------------------------
+
+#----------------------PYTHON--------------------------
+
+class RulePython(Rule):
+    def execute(self, target:str) -> int:
+        app_logger.info(f"{color_text(35,'Script running')}: {os.path.relpath(self.prerequisites[0])}")
+
+        if not os.path.exists(target):
+            os.makedirs(os.path.dirname(target),exist_ok=True)
+
+        return sh(self.prerequisites[0])
+
+#----------------------END PYTHON----------------------
 
 #----------------------ARGUMENTS-----------------------
 
@@ -1012,10 +850,10 @@ class ArgParser:
         return f'{self.commands}'
 
 class ArgParser(ArgParser):
-    outfile     = Arg('return OUT_FILE of project',[ArgVarType.String])
+    target      = Arg('return TARGET of project',[ArgVarType.String])
     build       = Arg('build project',[ArgVarType.String])
-    clean       = Arg('clean all project tree project or all',[ArgVarType.String])
-    run         = Arg('run project executable',[ArgVarType.String])
+    clean       = Arg('clean project',[ArgVarType.String])
+    run         = Arg('run project TARGET',[ArgVarType.String])
     gcvscode    = Arg('generate default config for visual studio code')
     help        = Arg('print this message')
 
@@ -1034,52 +872,33 @@ def gen_vscode_config():
         json.dump(launch, flaunch, indent=4)
         json.dump(tasks, ftasks, indent=4)
 
-def process(config_fnc, tool_config_fnc=None):
-    global tool_config
+def process(get_project_fnc, get_config_fnc=None):
+    global config
 
-    if tool_config_fnc:
-        tool_config = tool_config_fnc()
+    if get_config_fnc:
+        config = get_config_fnc()
 
-    setup_logger(tool_config)
-    if tool_config.MINIMUM_REQUIRED_VERSION > VERSION:
-        app_logger.warning(color_text(31,f"Required version {tool_config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!"))
-
-    os.chdir(os.path.dirname(os.path.realpath(sys.argv[0])))
+    setup_logger(config)
+    if config.MINIMUM_REQUIRED_VERSION > VERSION:
+        app_logger.warning(f"Required version {config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!")
 
     argparser = ArgParser(f'Mapyr {VERSION} is one-file build system written in python3\n')
     try:
         args = argparser.parse(sys.argv)
     except Exception as e:
-        app_logger.error(f'{e}')
+        app_logger.error(e)
         exit()
 
     if len(args) == 0:
         args = [ArgParser.build]
         args[0].values.append('main')
 
-    config = config_fnc()
-
     for arg in args:
         match arg:
             case ArgParser.help:        argparser.print_help()
-            case ArgParser.outfile:     print(config[arg.values[0]].OUT_FILE)
             case ArgParser.gcvscode:    gen_vscode_config()
-
-            case ArgParser.build:       Project(config[arg.values[0]]).build()
-            case ArgParser.run:
-                if arg.values[0] == 'all':
-                    for conf in config.values():
-                        if tool_config.CUSTOM_RUN_FUNCTION:
-                            tool_config.CUSTOM_RUN_FUNCTION(Project(conf))
-                        else:
-                            Project(conf).run()
-                else:
-                    Project(config[arg.values[0]]).run()
-
-            case ArgParser.clean:
-                if arg.values[0] == 'all':
-                    for conf in config.values():
-                        Project(conf).clean()
-                else:
-                    Project(config[arg.values[0]]).clean()
+            case ArgParser.build:       get_project_fnc(arg.values[0]).build()
+            case ArgParser.target:      print(get_project_fnc(arg.values[0]).TARGET)
+            case ArgParser.run:         sh(get_project_fnc(arg.values[0]).TARGET)
+            case ArgParser.clean:       get_project_fnc(arg.values[0]).clean()
 

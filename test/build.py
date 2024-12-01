@@ -1,25 +1,23 @@
 #!/usr/bin/python3
 
-import copy
+import lib.lib1.build
 
-def tool_config() -> "mapyr.ToolConfig":
-    tc = mapyr.ToolConfig()
-    tc.MINIMUM_REQUIRED_VERSION = '0.5.2'
-    return tc
+def get_config() -> 'mapyr.Config':
+    cfg = mapyr.Config()
+    cfg.MAX_THREADS_NUM = 1
+    return cfg
 
-def config() -> dict[str,"mapyr.ProjectConfig"]:
-    import lib.lib1.build
+def get_project(name:str) -> 'mapyr.Project|None':
+    match(name):
+        case 'main':
+            m = mapyr.create_c_project('bin/main', subprojects=[lib.lib1.build.get_project('main')],
+                                       private_config={'SOURCES':['src/script_artefact.c'],'CFLAGS':['-O2']},
+                                       config={'CFLAGS':['-g']})
+            m.RULES.append(mapyr.Rule(m,r'.*\.py'))
+            m.RULES.append(mapyr.RulePython(m,mapyr.abspath_project(m,'src/script_artefact.c'),mapyr.abspath_project(m,'script.py')))
+            return m
 
-    main = mapyr.ProjectConfig()
-    main.OUT_FILE  = "bin/test"
-    main.CFLAGS = ['-g','-O0']
-    main.SUBPROJECTS = [
-        lib.lib1.build.config()['main']
-    ]
-
-    return {
-        'main':main,
-    }
+    return None
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git
@@ -35,6 +33,5 @@ except:
     import mapyr
 '''
 
-
 if __name__ == "__main__":
-    mapyr.process(config, tool_config)
+    mapyr.process(get_project,get_config)

@@ -3,3 +3,4 @@ __pycache__
 obj
 bin
 .vscode
+script_artefact.c
