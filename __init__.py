@@ -189,9 +189,9 @@ def unique_list(l:list):
             result.append(v)
     return result
 
-def get_config(path:str) -> list['Project']:
+def get_module(path:str):
     '''
-        Load configs from other build script
+        Load module by relative path
     '''
     orig_cwd = os.getcwd()
     os.chdir(caller_cwd())
@@ -202,7 +202,7 @@ def get_config(path:str) -> list['Project']:
         raise ModuleNotFoundError(path)
     foo = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(foo)
-    return foo.config()
+    return foo
 
 def caller_cwd() -> str:
     '''
