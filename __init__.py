@@ -252,7 +252,7 @@ def make_cpp_properties(p:'Project',cfg:'CConfig'):
     }
 
     main_config = {
-        'configurations':config,
+        'configurations':[config],
         "version": 4
     }
 
@@ -339,7 +339,7 @@ class Project:
             for sp in p.SUBPROJECTS:
                 _load_subprojects(sp)
 
-                p.ALL_RULES.extend(sp.RULES)
+                p.ALL_RULES.extend(sp.ALL_RULES)
 
                 # Config master -> slave
                 extend_config(sp.CONFIG, p.CONFIG)
@@ -646,16 +646,25 @@ def get_rules_from_d_file(p:Project, path : str):
         if not line:
             continue
         spl = line.split(':')
-        if len(spl) < 2 or not spl[1]:
+        if len(spl) < 2:
             continue
 
         target = spl[0]
-        prerequisites = [x for x in spl[1].strip().split(' ') if x != target]
+        prerequisites = [x for x in spl[1].strip().split(' ') if x != target] if spl[1] else []
+        if not prerequisites:
+            p.RULES.append(Rule(p,target))
+            continue
+
         for rule in p.RULES:
             if target in rule.prerequisites:
+                br = False
                 for prq in prerequisites:
                     if prq not in rule.prerequisites:
                         rule.prerequisites.append(prq)
+                        br = True
+                        break
+                if br:
+                    break
 
 def pkg_config_search(config:dict[str,]):
     # Load libs data from pkg-config
