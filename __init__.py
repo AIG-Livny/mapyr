@@ -613,7 +613,12 @@ class RuleCClean(Rule):
         super().__init__(parent, 'clean')
 
     def execute(self, target: str) -> int:
-        silentremove(self.parent.PRIVATE_CONFIG['OBJ_PATH'])
+        def _rm(p:Project):
+            for sp in p.SUBPROJECTS:
+                _rm(sp)
+
+            silentremove(p.PRIVATE_CONFIG['OBJ_PATH'])
+        _rm(self.parent)
 
 class CConfig():
     def __init__(self, init:dict[str,] = None) -> None:
