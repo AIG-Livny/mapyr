@@ -10,10 +10,10 @@ def get_config() -> 'mapyr.Config':
 def get_project(name:str) -> 'mapyr.Project|None':
     match(name):
         case 'main':
-            m = mapyr.create_c_project('bin/main', subprojects=[lib.lib1.build.get_project('main')],
+            m = mapyr.create_c_project('main','bin/main', subprojects=[lib.lib1.build.get_project('main')],
                                        private_config={'SOURCES':['src/script_artefact.c'],'CFLAGS':['-O2']},
                                        config={'CFLAGS':['-g']})
-            m.RULES.append(mapyr.Rule(m,r'.*\.py'))
+            m.RULES.append(mapyr.Rule(m,mapyr.Regex(r'.*\.py')))
             m.RULES.append(mapyr.RulePython(m,mapyr.abspath_project(m,'src/script_artefact.c'),mapyr.abspath_project(m,'script.py')))
             return m
 

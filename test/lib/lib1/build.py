@@ -18,7 +18,7 @@ def get_config() -> mapyr.Config:
     return cfg
 
 def get_project(name:str) -> "mapyr.Project|None":
-    return mapyr.create_c_project('bin/liblib1.a',export_config={'INCLUDE_DIRS' : ['src']})
+    return mapyr.create_c_project(name,'bin/liblib1.a',export_config={'INCLUDE_DIRS' : ['src']})
 
 
 if __name__ == "__main__":
