@@ -334,7 +334,7 @@ class Project:
         self.CONFIG : dict[str,] = dict()
         self.EXPORT_CONFIG : dict[str,] = dict()
 
-        self.RULES : list[Rule] = []
+        self.RULES : list[Rule] = [RuleBuild(self),RulePrintTarget(self)]
         '''
         '''
 
@@ -519,9 +519,24 @@ class RuleBuild(Rule):
     def execute(self, target: str) -> int:
         self.parent.build()
 
+class RulePrintTarget(Rule):
+    def __init__(self, parent: Project) -> None:
+        super().__init__(parent, 'target', parent.TARGET, phony=True)
+
+    def execute(self, target: str) -> int:
+        print(self.parent.TARGET)
+
 #----------------------END COMMON----------------------
 
 #----------------------C-------------------------------
+
+class RuleGenerateVSCODE(Rule):
+    def __init__(self, parent: Project) -> None:
+        super().__init__(parent, 'gcvscode', parent.TARGET, phony=True)
+
+    def execute(self, target: str) -> int:
+        gen_vscode_config()
+
 class RuleO(Rule):
     def execute(self, target:str) -> int:
         app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(self.prerequisites[0])}")
@@ -598,7 +613,7 @@ class RuleCClean(Rule):
         super().__init__(parent, 'clean')
 
     def execute(self, target: str) -> int:
-        pass
+        silentremove(self.parent.PRIVATE_CONFIG['OBJ_PATH'])
 
 class CConfig():
     def __init__(self, init:dict[str,] = None) -> None:
@@ -772,7 +787,7 @@ def create_c_project(name:str,target_file:str, src_dirs = ['src'], src_extension
     p.RULES.append(Rule(p,Regex(r'.*\.c')))
     p.RULES.append(Rule(p,Regex(r'.*\.h')))
     p.RULES.append(RuleCClean(p))
-    p.RULES.append(RuleBuild(p))
+    p.RULES.append(RuleGenerateVSCODE(p))
 
     obj_path = private_config['OBJ_PATH'] if 'OBJ_PATH' in private_config else abspath_project(p,'obj')
     p.PRIVATE_CONFIG['OBJ_PATH'] = obj_path
@@ -836,22 +851,30 @@ def process(get_project_fnc, get_config_fnc=None):
     if config.MINIMUM_REQUIRED_VERSION > VERSION:
         app_logger.warning(f"Required version {config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!")
 
-    if len(sys.argv) < 3:
-        match len(sys.argv):
-            case 1: sys.argv += ['main','build']
-            case 2: sys.argv += ['build']
+    project = 'main'
+    target = 'build'
+    ln = len(sys.argv)
+    ln = 3 if ln > 3 else ln
+
+    match len(sys.argv):
+        case 3:
+            project = sys.argv[1]
+            target = sys.argv[2]
+        case 2:
+            target = sys.argv[1]
+        case 1:
+            pass
 
     try:
-        project : Project = get_project_fnc(sys.argv[1])
-        if not project:
+        p : Project = get_project_fnc(project)
+        if not p:
             raise Exceptions.ProjectNotFound()
 
-        rule : Rule = project.get_rule(project,sys.argv[2])
+        rule : Rule = p.get_rule(p,target)
         if not rule:
-            raise Exceptions.RuleNotFound()
+            raise Exceptions.RuleNotFound(target)
 
         rule.execute('')
 
     except Exception as e:
-        raise e
         app_logger.error(e)

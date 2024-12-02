@@ -32,12 +32,19 @@ if __name__ == "__main__":
 ```
 And run `./build.py`
 
-# Commands
-- `build [project]` - build project. Default project 'main'
-- `clean [project]` - clean projects in group
-- `target [project]` - print target of project
-- `run [project]` - execute target
-- `help` - print help
+# Arguments
+By default arguments are "main build", so running `./build.py` will compile main target
+
+If an one argument present then it will be accepted as target name for 'main' project. So running `./buld.py clean` will execute 'main clean'
+
+If both or more arguments present: the first - project name, the second - target name. Other will be ignored
+
+Default rules for all projects:
+- `target` - print target of project
+- `build` - run build process
+
+Default arguments for C project:
+- `clean` - clean project
 - `gcvscode` - generate init config for vscode
 
 # Features
