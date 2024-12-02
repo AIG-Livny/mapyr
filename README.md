@@ -13,7 +13,7 @@ Create `src/main.c` and `build.py` with content:
 #!/usr/bin/python3
 
 def get_project(name:str) -> 'mapyr.Project|None':
-    return mapyr.create_c_project('bin/main')
+    return mapyr.create_c_project('main','bin/main')
 
 
 #-----------FOOTER-----------

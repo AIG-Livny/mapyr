@@ -10,7 +10,12 @@ import inspect
 import re
 
 VERSION = '0.6.0'
-
+"""
+Сделать отдельный класс для regex правил
+Сравнивать строки со строками и правила отдельно
+вызов из командной строки конкретного правила
+clean - правило
+"""
 #----------------------LOGGING-------------------------
 
 app_logger : logging.Logger = None
@@ -87,6 +92,10 @@ class Exceptions:
         "Project not found"
     class RuleNotFound(CustomException):
         "Rule not found for:"
+    class NotImplemented(CustomException):
+        "Not implemented"
+    class SameProjectDifferentConfig(CustomException):
+        "Same project but with different config detected in subprojects:"
 
 #----------------------END EXCEPTIONS------------------
 
@@ -220,6 +229,9 @@ def extend_config(dst:dict[str,],src:dict[str,]):
             dst[key] = src[key]
             continue
 
+        if src[key] is dst[key]:
+            continue
+
         if type(src[key]) != type(dst[key]):
             continue
 
@@ -232,7 +244,7 @@ def abspath_project(prj:'Project', path) -> str:
         Return absolute path relative project and not CWD
         It made to keep CWD as is
     '''
-    return path if os.path.isabs(path) else f'{prj.CWD}/{path}'
+    return path if os.path.isabs(path) else os.path.abspath(f'{prj.CWD}/{path}')
 
 def relpath_project(prj:'Project', path) -> str:
     return os.path.relpath(path,prj.CWD)
@@ -259,13 +271,36 @@ def make_cpp_properties(p:'Project',cfg:'CConfig'):
     with open(vscode_file_path, 'w+') as f:
         json.dump(main_config, f, indent=4)
 
+def gen_vscode_config():
+    if os.path.exists('.vscode'):
+        app_logger.error('directory .vscode already exists')
+        exit()
+    os.makedirs('.vscode')
+    extensions = {"recommendations": ["augustocdias.tasks-shell-input"]}
+    launch = {"version":"0.2.0","configurations":[{"name":"app","type":"cppdbg","request":"launch","program":"${workspaceFolder}/${input:GetName}","args":[],"stopAtEntry":False,"cwd":"${workspaceFolder}","environment":[],"externalConsole":False,"MIMode":"gdb","preLaunchTask":"build","setupCommands":[{"text":"-enable-pretty-printing","ignoreFailures":True},{"text":"-gdb-set disassembly-flavor intel","ignoreFailures":True}]},{"name":"mapyr","type":"debugpy","request":"launch","program":"build.py","console":"integratedTerminal"}],"inputs":[{"id":"GetName","type":"command","command":"shellCommand.execute","args":{"command":"./build.py outfile main","useFirstResult":True}}]}
+    tasks = {"version":"2.0.0","tasks":[{"label":"build","type":"shell","command":"./build.py","group":{"isDefault":True,"kind":"build"},"presentation":{"clear":True}},{"label":"run","type":"shell","command":"./build.py run"},{"label":"clean","type":"shell","command":"./build.py clean","presentation":{"reveal":"never"}}]}
+    with open('.vscode/extensions.json','w+') as fext, open('.vscode/launch.json','w+') as flaunch, open('.vscode/tasks.json','w+') as ftasks:
+        json.dump(extensions, fext, indent=4)
+        json.dump(launch, flaunch, indent=4)
+        json.dump(tasks, ftasks, indent=4)
+
 #----------------------END UTILS-----------------------
 
 #---------------------------RULE-----------------------
 
+class Regex:
+    def __init__(self, regex:str) -> None:
+        self.regex = regex
+
+    def __str__(self) -> str:
+        return self.regex
+
+    def __repr__(self) -> str:
+        return self.regex
+
 class Rule:
-    def __init__(self, parent:'Project', regexp_targets:str|list[str]|set[str], prerequisites:str|list['str']|set['str'] = [], phony=False) -> None:
-        self.regexp_targets : list[str] = [regexp_targets] if type(regexp_targets) is str else list(regexp_targets)
+    def __init__(self, parent:'Project', targets:str|Regex|list[str|Regex], prerequisites:str|list['str'] = [], phony=True) -> None:
+        self.targets : list[str|Regex] = [targets] if type(targets) in [str,Regex] else list(targets)
         self.prerequisites : list[str] = [prerequisites] if type(prerequisites) is str else list(prerequisites)
 
         self.phony = phony
@@ -273,20 +308,21 @@ class Rule:
         self.build_layer :int = 0
         self.target_build_list : list[str] = []
 
+    '''
     def execute(self, target:str) -> int:
-        raise NotImplementedError()
+    '''
 
     def __repr__(self) -> str:
-        return f'{self.regexp_targets}:{self.prerequisites}'
+        return f'{self.targets}:{self.prerequisites}'
 
 #---------------------------END RULE-------------------
 
 #---------------------------PROJECT--------------------
 
 class Project:
-    def __init__(self, target_path:str) -> None:
+    def __init__(self,name:str, target_path:str) -> None:
         self.CWD : str = caller_cwd()
-
+        self.NAME = name
         self.TARGET : str = target_path if os.path.isabs(target_path) else f'{self.CWD}/{target_path}'
 
         '''
@@ -307,23 +343,31 @@ class Project:
         self.BEFORE_RUN_BUILD_CALLBACK = None
 
 
-    def get_rule(self, project:'Project', target_path:str) -> Rule|None:
+    def get_rule(self, project:'Project', name:str, exclude_rule:Rule = None) -> Rule|None:
         rules = self.ALL_RULES if self.ALL_RULES else self.RULES
 
         # First, looking for exact match
         for rule in rules:
-            for target in rule.regexp_targets:
-                if target == target_path:
+            if rule is exclude_rule:
+                continue
+
+            for target in rule.targets:
+                if target == name:
                     return rule
 
         # Second, looking for regex rules
         for rule in rules:
-            for regexp in rule.regexp_targets:
+            if rule is exclude_rule:
+                continue
+            for target in rule.targets:
                 # Regex match only for owner project
                 if project != rule.parent:
                     continue
 
-                if re.match(regexp, target_path):
+                if type(target) is not Regex:
+                    continue
+
+                if re.match(target.regex, name):
                     return rule
         return None
 
@@ -333,10 +377,27 @@ class Project:
         if target_path is None:
             target_path = self.TARGET
 
+        projects_loaded : list[Project] = []
+        projects_trace : list[Project] = []
         def _load_subprojects(p:Project):
+            if p in projects_trace:
+                raise Exceptions.CircularDetected()
+
+            projects_trace.append(p)
+
             p.ALL_RULES.extend(p.RULES)
 
             for sp in p.SUBPROJECTS:
+                for pl in projects_loaded:
+                    if pl.TARGET == sp.TARGET:
+                        if sp.NAME != pl.NAME:
+                            raise Exceptions.SameProjectDifferentConfig(f'{sp.TARGET} and {pl.TARGET}. Projects trace: {projects_trace}')
+
+                        # We found same project but from another branch of tree
+                        # It can has a different config
+                        extend_config(pl.PRIVATE_CONFIG, sp.PRIVATE_CONFIG)
+                        continue
+
                 _load_subprojects(sp)
 
                 p.ALL_RULES.extend(sp.ALL_RULES)
@@ -354,7 +415,9 @@ class Project:
                 extend_config(p.EXPORT_CONFIG, sp.EXPORT_CONFIG)
 
             # Summary config
-            extend_config(p.CONFIG, p.EXPORT_CONFIG)
+            extend_config(p.PRIVATE_CONFIG, p.EXPORT_CONFIG)
+            projects_loaded.append(p)
+            projects_trace.pop()
 
         _load_subprojects(self)
 
@@ -363,7 +426,7 @@ class Project:
 
         rules_in = []
         def _get_build_layer(p:Project, _target:str) -> int:
-            rule = self.get_rule(p, _target)
+            rule = self.get_rule(p, _target, rules_in[-1] if rules_in else None)
 
             if not rule:
                 raise Exceptions.RuleNotFound(_target)
@@ -375,9 +438,6 @@ class Project:
                 raise Exceptions.CircularDetected()
             rules_in.append(rule)
 
-            if not rule.phony:
-                out_file_exists = os.path.exists(_target)
-
             max_child_build_layer = 0
             need_build = False
             for prq in rule.prerequisites:
@@ -388,15 +448,19 @@ class Project:
                 # If children will builds then we will build too
                 if max_child_build_layer:
                     need_build = True
-                else:
-                    need_build = False
-                    if out_file_exists:
-                        out_date = os.path.getmtime(_target)
-                        src_date = os.path.getmtime(prq)
-                        if src_date > out_date:
-                            need_build = True
-                    else:
-                        need_build = True
+                    continue
+
+                if rule.phony:
+                    continue
+
+                if not os.path.exists(_target):
+                    need_build = True
+                    continue
+
+                out_date = os.path.getmtime(_target)
+                src_date = os.path.getmtime(prq)
+                if src_date > out_date:
+                    need_build = True
 
             if need_build:
                 rule.build_layer = max_child_build_layer + 1
@@ -406,11 +470,7 @@ class Project:
             rules_in.pop()
             return rule.build_layer
 
-        try:
-            layers_num = _get_build_layer(self, target_path)
-        except Exception as e:
-            app_logger.error(str(e))
-            return False
+        layers_num = _get_build_layer(self, target_path)
 
         if layers_num == 0:
             app_logger.info('Nothing to build')
@@ -427,8 +487,9 @@ class Project:
             with concurrent.futures.ProcessPoolExecutor(max_workers=threads_num) as executor:
                 builders = []
                 for rule in layer:
-                    for target in rule.target_build_list:
-                        builders.append(executor.submit(rule.execute, target))
+                    if getattr(rule, "execute", None):
+                        for target in rule.target_build_list:
+                            builders.append(executor.submit(rule.execute, target))
 
                 for i in range(len(builders)):
                     if builders[i].result() != 0:
@@ -438,42 +499,29 @@ class Project:
                 if error:
                     break
         if error:
-            app_logger.error(f'{problem_rule.regexp_targets[0]}: Error. Stopped.')
+            app_logger.error(f'{problem_rule.targets[0]}: Error. Stopped.')
             return False
 
         app_logger.info(color_text(32,'Done'))
         return True
 
-    def clean(self):
-        def _del_from_proj(p:Project):
-            for sp in p.SUBPROJECTS:
-                _del_from_proj(sp)
-
-            for rule in p.RULES:
-                for target in rule.regexp_targets:
-                    if target == p.TARGET:
-                        continue
-
-                    if os.path.exists(target):
-                        silentremove(target)
-
-        _del_from_proj(self)
-
     def __repr__(self) -> str:
-        return self.TARGET
+        return f'{self.NAME}:{self.TARGET}'
 
 #----------------------END PROJECT---------------------
 
+#----------------------COMMON--------------------------
+
+class RuleBuild(Rule):
+    def __init__(self, parent: Project) -> None:
+        super().__init__(parent, 'build', parent.TARGET, phony=True)
+
+    def execute(self, target: str) -> int:
+        self.parent.build()
+
+#----------------------END COMMON----------------------
+
 #----------------------C-------------------------------
-
-class RuleC(Rule):
-    def __init__(self, parent:'Project'):
-        super().__init__(parent,r'.*\.c')
-
-class RuleH(Rule):
-    def __init__(self, parent:'Project'):
-        super().__init__(parent,r'.*\.h')
-
 class RuleO(Rule):
     def execute(self, target:str) -> int:
         app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(self.prerequisites[0])}")
@@ -544,6 +592,13 @@ class RuleStatic(Rule):
             f.write(get_c_build_config_str(self.parent.PRIVATE_CONFIG))
 
         return sh(self.cmd)
+
+class RuleCClean(Rule):
+    def __init__(self, parent: Project) -> None:
+        super().__init__(parent, 'clean')
+
+    def execute(self, target: str) -> int:
+        pass
 
 class CConfig():
     def __init__(self, init:dict[str,] = None) -> None:
@@ -651,20 +706,7 @@ def get_rules_from_d_file(p:Project, path : str):
 
         target = spl[0]
         prerequisites = [x for x in spl[1].strip().split(' ') if x != target] if spl[1] else []
-        if not prerequisites:
-            p.RULES.append(Rule(p,target))
-            continue
-
-        for rule in p.RULES:
-            if target in rule.prerequisites:
-                br = False
-                for prq in prerequisites:
-                    if prq not in rule.prerequisites:
-                        rule.prerequisites.append(prq)
-                        br = True
-                        break
-                if br:
-                    break
+        p.RULES.append(Rule(p,target,prerequisites))
 
 def pkg_config_search(config:dict[str,]):
     # Load libs data from pkg-config
@@ -702,10 +744,10 @@ def before_run_build_c(prj:Project):
 
     rm_artifacts(prj)
 
-def create_c_project(target_file:str, src_dirs = ['src'], src_extensions=['.c'], subprojects:list[Project]=[],
+def create_c_project(name:str,target_file:str, src_dirs = ['src'], src_extensions=['.c'], subprojects:list[Project]=[],
                      export_config:dict[str,]={}, config:dict[str,]={}, private_config:dict[str,]={}) -> Project:
 
-    p = Project(target_file)
+    p = Project(name,target_file)
     p.BEFORE_RUN_BUILD_CALLBACK = before_run_build_c
 
     set_c_config_paths_absolute(p,export_config)
@@ -727,8 +769,10 @@ def create_c_project(target_file:str, src_dirs = ['src'], src_extensions=['.c'],
     extend_config(p.PRIVATE_CONFIG, p.CONFIG)
     extend_config(p.PRIVATE_CONFIG, p.EXPORT_CONFIG)
 
-    p.RULES.append(RuleC(p))
-    p.RULES.append(RuleH(p))
+    p.RULES.append(Rule(p,Regex(r'.*\.c')))
+    p.RULES.append(Rule(p,Regex(r'.*\.h')))
+    p.RULES.append(RuleCClean(p))
+    p.RULES.append(RuleBuild(p))
 
     obj_path = private_config['OBJ_PATH'] if 'OBJ_PATH' in private_config else abspath_project(p,'obj')
     p.PRIVATE_CONFIG['OBJ_PATH'] = obj_path
@@ -746,14 +790,14 @@ def create_c_project(target_file:str, src_dirs = ['src'], src_extensions=['.c'],
         artefact = f'{obj_path}/{os.path.splitext(relpath_project(p,src).replace("../","updir/"))[0]}'
         object = f'{artefact}.o'
         dep = f'{artefact}.d'
-        p.RULES.append(RuleO(p,object,src))
+        p.RULES.append(RuleO(p,object,src,phony=False))
         objects.append(object)
         get_rules_from_d_file(p,dep)
 
     if p.TARGET.endswith('.a'):
-        target_rule = RuleStatic(p, p.TARGET, objects)
+        target_rule = RuleStatic(p, p.TARGET, objects,phony=False)
     else:
-        target_rule = RuleExe(p, p.TARGET, objects)
+        target_rule = RuleExe(p, p.TARGET, objects,phony=False)
 
     p.RULES.append(target_rule)
 
@@ -769,6 +813,9 @@ def create_c_project(target_file:str, src_dirs = ['src'], src_extensions=['.c'],
 #----------------------PYTHON--------------------------
 
 class RulePython(Rule):
+    def __init__(self, parent: Project, targets: str | Regex | list[str | Regex], prerequisites: str | list[str] = []) -> None:
+        super().__init__(parent, targets, prerequisites, phony=False)
+
     def execute(self, target:str) -> int:
         app_logger.info(f"{color_text(35,'Script running')}: {os.path.relpath(self.prerequisites[0])}")
 
@@ -778,108 +825,6 @@ class RulePython(Rule):
         return sh(self.prerequisites[0])
 
 #----------------------END PYTHON----------------------
-
-#----------------------ARGUMENTS-----------------------
-
-class ArgVarType:
-    String = 1
-
-class Arg:
-    def __init__(self, help:str, vartypes : list[ArgVarType] = []) -> None:
-        self.help = help
-        self.vartypes = vartypes
-        self.name : str
-        self.values = []
-
-    def addValue(self, value:str):
-        index = len(self.values)
-        vt = self.vartypes[index]
-        if vt == ArgVarType.String:
-            self.values.append(value)
-
-    def getOptCodes(self) -> str:
-        result = ''
-        for vt in self.vartypes:
-            if vt == ArgVarType.String:
-                result += '[str]'
-
-        return result
-
-    def __repr__(self) -> str:
-        return f'{self.name}:{self.values}'
-
-class ArgParser:
-    def __init__(self, help_head : str = '') -> None:
-        self.help_head = help_head
-
-        self.commands : list[Arg] = []
-        for membername in dir(self):
-            member = getattr(self,membername)
-            if type(member).__name__ == Arg.__name__:
-                member.name = membername
-                self.commands.append(member)
-
-    def print_help(self):
-        cmds = '     ' + '\n     '.join([f"{arg.name + ' ' +arg.getOptCodes():<20}{arg.help}" for arg in self.commands])
-        help = f'''{self.help_head}\nUsage:\n{cmds}\n'''
-        print(help)
-
-    def parse(self, args:list[str]) -> list[Arg]:
-        def cmd_find(i) -> Arg:
-            candidate = None
-            for c in self.commands:
-                if c.name == args[i]:
-                    return c
-                if c.name.startswith(args[i]):
-                    if candidate is not None:
-                        raise RuntimeError(f'command "{args[i]}" is ambiguous')
-                    candidate = c
-            if candidate is not None:
-                return candidate
-            raise RuntimeError(f'command "{args[i]}" not found')
-
-        result:list[Arg] = []
-        i = 1
-        while i < len(args):
-            arg = cmd_find(i)
-
-            for vt in arg.vartypes:
-                i += 1
-                if i >= len(args):
-                    raise RuntimeError('not enough arguments')
-
-                arg.addValue(args[i])
-
-            result.append(arg)
-            i += 1
-
-        return result
-
-    def __repr__(self) -> str:
-        return f'{self.commands}'
-
-class ArgParser(ArgParser):
-    target      = Arg('return TARGET of project',[ArgVarType.String])
-    build       = Arg('build project',[ArgVarType.String])
-    clean       = Arg('clean project',[ArgVarType.String])
-    run         = Arg('run project TARGET',[ArgVarType.String])
-    gcvscode    = Arg('generate default config for visual studio code')
-    help        = Arg('print this message')
-
-#----------------------END ARGUMENTS-------------------
-
-def gen_vscode_config():
-    if os.path.exists('.vscode'):
-        app_logger.error('directory .vscode already exists')
-        exit()
-    os.makedirs('.vscode')
-    extensions = {"recommendations": ["augustocdias.tasks-shell-input"]}
-    launch = {"version":"0.2.0","configurations":[{"name":"app","type":"cppdbg","request":"launch","program":"${workspaceFolder}/${input:GetName}","args":[],"stopAtEntry":False,"cwd":"${workspaceFolder}","environment":[],"externalConsole":False,"MIMode":"gdb","preLaunchTask":"build","setupCommands":[{"text":"-enable-pretty-printing","ignoreFailures":True},{"text":"-gdb-set disassembly-flavor intel","ignoreFailures":True}]},{"name":"mapyr","type":"debugpy","request":"launch","program":"build.py","console":"integratedTerminal"}],"inputs":[{"id":"GetName","type":"command","command":"shellCommand.execute","args":{"command":"./build.py outfile main","useFirstResult":True}}]}
-    tasks = {"version":"2.0.0","tasks":[{"label":"build","type":"shell","command":"./build.py","group":{"isDefault":True,"kind":"build"},"presentation":{"clear":True}},{"label":"run","type":"shell","command":"./build.py run"},{"label":"clean","type":"shell","command":"./build.py clean","presentation":{"reveal":"never"}}]}
-    with open('.vscode/extensions.json','w+') as fext, open('.vscode/launch.json','w+') as flaunch, open('.vscode/tasks.json','w+') as ftasks:
-        json.dump(extensions, fext, indent=4)
-        json.dump(launch, flaunch, indent=4)
-        json.dump(tasks, ftasks, indent=4)
 
 def process(get_project_fnc, get_config_fnc=None):
     global config
@@ -891,23 +836,22 @@ def process(get_project_fnc, get_config_fnc=None):
     if config.MINIMUM_REQUIRED_VERSION > VERSION:
         app_logger.warning(f"Required version {config.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!")
 
-    argparser = ArgParser(f'Mapyr {VERSION} is one-file build system written in python3\n')
+    if len(sys.argv) < 3:
+        match len(sys.argv):
+            case 1: sys.argv += ['main','build']
+            case 2: sys.argv += ['build']
+
     try:
-        args = argparser.parse(sys.argv)
+        project : Project = get_project_fnc(sys.argv[1])
+        if not project:
+            raise Exceptions.ProjectNotFound()
+
+        rule : Rule = project.get_rule(project,sys.argv[2])
+        if not rule:
+            raise Exceptions.RuleNotFound()
+
+        rule.execute('')
+
     except Exception as e:
+        raise e
         app_logger.error(e)
-        exit()
-
-    if len(args) == 0:
-        args = [ArgParser.build]
-        args[0].values.append('main')
-
-    for arg in args:
-        match arg:
-            case ArgParser.help:        argparser.print_help()
-            case ArgParser.gcvscode:    gen_vscode_config()
-            case ArgParser.build:       get_project_fnc(arg.values[0]).build()
-            case ArgParser.target:      print(get_project_fnc(arg.values[0]).TARGET)
-            case ArgParser.run:         sh(get_project_fnc(arg.values[0]).TARGET)
-            case ArgParser.clean:       get_project_fnc(arg.values[0]).clean()
-
