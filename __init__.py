@@ -329,7 +329,7 @@ class Project:
         self.CONFIG : dict[str,] = dict()
         self.EXPORT_CONFIG : dict[str,] = dict()
 
-        self.RULES : list[Rule] = [RuleBuild(self),RulePrintTarget(self)]
+        self.RULES : list[Rule] = [RuleBuild(self),RulePrintTarget(self),RuleHelp(self)]
         '''
         '''
 
@@ -520,6 +520,26 @@ class RulePrintTarget(Rule):
 
     def execute(self, target: str) -> int:
         print(self.parent.TARGET)
+
+class RuleHelp(Rule):
+    def __init__(self, parent: Project) -> None:
+        super().__init__(parent, 'help', parent.TARGET, phony=True)
+
+    def execute(self, target: str) -> int:
+        rls = [ x for x in self.parent.RULES if x.phony ]
+        result = []
+
+        for rule in rls:
+            for target in rule.targets:
+                if type(target) is Regex:
+                    break
+
+                if re.findall(r'\\|/|\*',target):
+                    break
+
+                result.append(rule)
+
+        print('\n'.join([ x.targets[0] for x in result ]))
 
 #----------------------END COMMON----------------------
 
