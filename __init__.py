@@ -9,7 +9,7 @@ import importlib.util
 import inspect
 import re
 
-VERSION = '0.6.0'
+VERSION = '0.6.1'
 
 #----------------------LOGGING-------------------------
 
@@ -837,7 +837,7 @@ class RulePython(Rule):
         if not os.path.exists(target):
             os.makedirs(os.path.dirname(target),exist_ok=True)
 
-        return sh(self.prerequisites[0])
+        return get_module(self.prerequisites[0]).generate(self.parent)
 
 #----------------------END PYTHON----------------------
 

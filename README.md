@@ -1,4 +1,4 @@
-# Mapyr v.0.6.0
+# Mapyr v.0.6.1
 
 Mapyr - is a one-file build system written in Python3 and inherits the Makefile rule system, extending and complementing it.
 
