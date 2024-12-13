@@ -608,7 +608,7 @@ class RuleStatic(Rule):
         if not os.path.exists(target):
             os.makedirs(os.path.dirname(target),exist_ok=True)
 
-        cfg = CConfig(self.parent.CONFIG)
+        cfg = CConfig(self.parent.PRIVATE_CONFIG)
 
         self.cmd = [cfg.AR] \
         + [''.join(cfg.AR_FLAGS)] \
