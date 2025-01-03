@@ -1,87 +1,112 @@
-# Mapyr v.0.6.1
+# Mapyr v.0.7.0
 
-Mapyr - is a one-file build system written in Python3 and inherits the Makefile rule system, extending and complementing it.
+Mapyr - is a small not-installable in OS build system written in Python3 and inherits the Makefile rule system, extending and complementing it.
 
 Why Mapyr needed:
  - Extend the capabilities of Makefile
  - Replace the Makefile language with Python language
- - Create a system for exchanging configurations between different projects
+ - For exchanging configurations system between different projects
 
-# Quick start
-Create `src/main.c` and `build.py` with content:
-```py
+# Usage
+Create file `build.py` in the project root directory. Put this mandatory text into it:
+```python
 #!/usr/bin/python3
 
-def get_project(name:str) -> 'mapyr.Project|None':
-    return mapyr.create_c_project('main','bin/main')
-
-
+def get_rules() -> list['Rule']:
+    return []
 #-----------FOOTER-----------
-# https://github.com/AIG-Livny/mapyr.git
 try:
-    import mapyr
+    from mapyr import *
 except:
-    import requests, os
-    os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
-    with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
-        f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
-    import mapyr
+    import shutil, subprocess, os
+    path = f'{os.path.dirname(__file__)}/mapyr'
+    shutil.rmtree(path,ignore_errors=True)
+    if subprocess.run(['git','clone','https://github.com/AIG-Livny/mapyr.git',path]).returncode: exit()
+    from mapyr import *
 
 if __name__ == "__main__":
-    mapyr.process(get_project)
+    process(get_rules,get_config if 'get_config' in dir() else None)
 ```
-And run `./build.py`
+This code will download this repository if it not exists or has errors
 
-# Arguments
-By default arguments are "main build", so running `./build.py` will compile main target
+- Function `get_rules` have to return list of possible rules.
 
-If an one argument present then it will be accepted as target name for 'main' project. So running `./buld.py clean` will execute 'main clean'
+- `Rule` has target, prerequisites, configurations and executing function.
 
-If both or more arguments present: the first - project name, the second - target name. Other will be ignored
+- `Target : str` is path to file that we expect after executing this rule, or just name.
 
-Default rules for all projects:
-- `target` - print target of project
-- `build` - run build process
+- `Prerequisites : list[str]` is targets or names that must be done before this rule.
 
-Default arguments for C project:
-- `clean` - clean project
-- `gcvscode` - generate init config for vscode
+- `Config : dict` any configuration values packed into dictionary. Configurations can be passed to other rules. See below.
 
-# Features
+- `Exec : function(rule:Rule)` if function that rule must execute to achive target, accept caller rule as argument
 
-### Config sharing:
-There are 3 config types for each project:
-- Private config - is using only for this project
-- Config - for this project and its children
-- Export config - for this project and its parents
+- If `target` is name (not path to file) then rule must be marked `phony`.
 
-While processing the project tree "Export config" and "Config" will be merged with "Private config" and go further. Take a look this diagram
+- We can call any rule from shell: `build.py myrule`. Calling `build.py` without arguments will run `build` target as default.
 
- ```
- Root project------>------SubProject-------->-----SubSubProject----------...
 
- Config---\----->---------Config---\-------->-----Config----\------>-----...
-          V                        V                        V
- Private config           Private config          Private config         ...
-              ^                        ^                       ^
- Export config-\-----<----Export config-\----<----Export config-\----<---...
- ```
+Example of a C static library project `get_rules` function:
 
-So, some a library with specific flags can transmit them up
-And children can get the parent configs
+```python
+def get_rules() -> list['Rule']:
 
-### Flexible rule system:
-Inherited from Makefile the rule system can be configured for any project and language.
+    # We are going to send this config
+    # to all who will include this project
+    # so they must have INCLUDE_DIR, LIB_DIR and LIB
+    # pointing to this library
+    config = c.Config()
+    config.LIB_DIRS = ['bin']
+    config.LIBS = ['lib1']
+    config.INCLUDE_DIRS = ['src']
 
-There is default rule set for C language project as example. See the 'C' section in `__init__.py`
+    # Make paths absolute to avoid mistakes
+    config.set_paths_absolute()
 
-### Mapyr Config
-Mapyr itself has config:
+    rules = []
+    # Phony target build as entry point
+    rules.append(Rule('build',['bin/liblib1.a'],phony=True))
 
-- `MAX_THREADS_NUM` [int = 10] - Build threads limit
+    # Main target request 'lib1.o' before exec link
+    # and send config in upstream configs,
+    # those who get this rule as prerequisite
+    rules.append(Rule('bin/liblib1.a',['obj/src/lib1.o'],exec=c.link_static,upstream_config=config.__dict__))
 
-- `MINIMUM_REQUIRED_VERSION` [str = VERSION] - Minimum required version for this config file
+    rules.append(Rule('obj/src/lib1.o',['src/lib1.c'],exec=c.build_object,config=config.__dict__))
+    rules.append(Rule('src/lib1.c'))
 
-- `VERBOSITY` [str = "INFO"] - Verbosity level for console output. Value can be any from logging module: ['CRITICAL','FATAL','ERROR','WARN','WARNING','INFO','DEBUG','NOTSET']
+    # Reading the .d file if he exists.
+    # It appends 'src/lib1.h' and other .h
+    c.add_rules_from_d_file('obj/src/lib1.d',rules)
 
-Using example you can see in test folder
+    return rules
+```
+This is custom rules implementation. But it can done simplier by `create_standard_rules_macro` funcion from module `c.py`:
+```python
+def get_rules() -> list['Rule']:
+
+    config = c.Config()
+    config.INCLUDE_DIRS = ['src']
+    config.set_paths_absolute()
+
+    rules = c.create_standard_rules_macro('bin/liblib1.a',upstream_config=config)
+
+    return rules
+```
+
+Module `c.py` is addon for C language.
+
+# Config exchange rules
+Diagram:
+```
+Root             ChildRoot        GrandChildRoot
+Downstream ↧→→→→ Downstream ↧→→→→ Downstream ↧→→→→ ...
+           ↓                ↓                ↓
+    Config←↤         Config←↤         Config←↤     ...
+           ↑                ↑                ↑
+  Upstream ←←↥←←←←←Upstream ←←↥←←←← Upstream ←←↥←← ...
+```
+
+Downstream config applying for current rule and children
+Upstream config applying for current rule and parents
+Config applying only for current rule

@@ -1,25 +1,33 @@
 #!/usr/bin/python3
 
-import mapyr
-'''
-try:
-    import mapyr
-except:
-    import requests, os
-    os.makedirs(f'{os.path.dirname(__file__)}/mapyr',exist_ok=True)
-    with open(f'{os.path.dirname(__file__)}/mapyr/__init__.py','+w') as f:
-        f.write(requests.get('https://raw.githubusercontent.com/AIG-Livny/mapyr/master/__init__.py').text)
-    import mapyr
-'''
-
-def get_config() -> mapyr.Config:
-    cfg = mapyr.Config()
+def get_config() -> 'ToolConfig':
+    cfg = ToolConfig()
     cfg.MAX_THREADS_NUM = 1
     return cfg
 
-def get_project(name:str) -> "mapyr.Project|None":
-    return mapyr.create_c_project(name,'bin/liblib1.a',export_config={'INCLUDE_DIRS' : ['src']})
+def get_rules() -> list['Rule']:
+    config = c.Config()
+    config.INCLUDE_DIRS = ['src']
+    config.set_paths_absolute()
 
+    rules = c.create_standard_rules_macro('bin/liblib1.a',upstream_config=config)
+    return rules
 
+#-----------FOOTER-----------
+# https://github.com/AIG-Livny/mapyr.git
+from mapyr import *
+# Disable footer in tests
+'''
+#-----------FOOTER-----------
+try:
+    from mapyr import *
+except:
+    import shutil, subprocess, os
+    path = f'{os.path.dirname(__file__)}/mapyr'
+    shutil.rmtree(path,ignore_errors=True)
+    if subprocess.run(['git','clone','https://github.com/AIG-Livny/mapyr.git',path]).returncode: exit()
+    from mapyr import *
+
+'''
 if __name__ == "__main__":
-    mapyr.process(get_project,get_config)
+    process(get_rules,get_config if 'get_config' in dir() else None)
