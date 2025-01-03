@@ -106,7 +106,7 @@ def vscode_make_cpp_properties(rule:Rule,cfg:'Config'):
         json.dump(main_config, f, indent=4)
 
 def build_object(rule:Rule) -> int:
-    app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(rule.prerequisites[0])}")
+    app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(rule.target)}")
 
     os.makedirs(os.path.dirname(rule.target),exist_ok=True)
 

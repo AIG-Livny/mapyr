@@ -5,6 +5,7 @@ import subprocess
 import concurrent.futures
 import importlib.util
 import inspect
+import copy
 
 from .logger import app_logger,console_handler,color_text
 
@@ -173,18 +174,17 @@ def extend_config(dst:dict[str,]|None, src:dict[str,]|None) -> None:
     if src is None:
         return
     if dst is None:
-        dst = src
+        dst = copy.deepcopy(src)
+        return
 
     for key in src.keys():
         if key not in dst:
-            dst[key] = src[key]
-            continue
-
-        if src[key] is dst[key]:
+            dst[key] = copy.deepcopy(src[key])
             continue
 
         if type(src[key]) != type(dst[key]):
-            continue
+            app_logger.error('Different types in configs under same key')
+            exit()
 
         if type(dst[key]) is list:
             dst[key].extend(src[key])
@@ -201,9 +201,9 @@ class Rule:
             prerequisites       : list[str]         = [],
             exec                : 'function'        = None,
             phony               : bool              = False,
-            config              : dict              = dict(),
-            downstream_config   : dict              = dict(),
-            upstream_config     : dict              = dict(),
+            config              : dict              = None,
+            downstream_config   : dict              = None,
+            upstream_config     : dict              = None,
             before_build        : list['function']  = [],
             cwd                 : str               = None
         ) -> None:
@@ -233,17 +233,17 @@ class Rule:
             Phony target not expects output file, and will be executed every time when called
         '''
 
-        self.config : dict = config
+        self.config : dict = config if config else dict()
         '''
             Config only for this rule
         '''
 
-        self.downstream_config : dict = downstream_config
+        self.downstream_config : dict = downstream_config if downstream_config else dict()
         '''
             Config for this rule and children
         '''
 
-        self.upstream_config : dict = upstream_config
+        self.upstream_config : dict = upstream_config if upstream_config else dict()
         '''
             Config for this rule and parents
         '''
@@ -324,15 +324,9 @@ def exchange_configs(target:str) -> bool:
           Upstream ←←↥←←←←←Upstream ←←↥←←←← Upstream ←←↥←← ...
     '''
 
-    def _exchange_configs(rule:Rule, parent_rule:Rule) -> bool:
+    def _upstream_configs(rule:Rule, parent_rule:Rule) -> bool:
         if parent_rule is None:
             return False
-
-        # Config parent -> child
-        extend_config(rule.downstream_config, parent_rule.downstream_config)
-
-        # Config parent -> child private
-        extend_config(rule.config, parent_rule.downstream_config)
 
         # Config parent private <- child export
         extend_config(parent_rule.config, rule.upstream_config)
@@ -344,7 +338,21 @@ def exchange_configs(target:str) -> bool:
         extend_config(rule.config, rule.upstream_config)
         return False
 
-    recursive_run(target,_exchange_configs)
+    recursive_run(target,_upstream_configs)
+
+    def _downstream_configs(rule:Rule):
+        for prq in rule.prerequisites:
+            prq_rule = find_rule(prq)
+            # Config parent -> child
+            extend_config(prq_rule.downstream_config, rule.downstream_config)
+
+            # Config parent -> child private
+            extend_config(prq_rule.config, rule.downstream_config)
+
+            _downstream_configs(prq_rule)
+
+    rule = find_rule(target)
+    _downstream_configs(rule)
 
 def set_build_layers(target:str) -> int:
     build_layers : dict[Rule,int] = dict()
@@ -473,13 +481,6 @@ def process(get_rules_fnc, get_config_fnc=None):
         if 'help' in sys.argv:
             help()
             exit()
-
-        # Unify rules
-        been : dict[str,Rule] = dict()
-        for rule in RULES:
-            if been.setdefault(rule.target,rule) is not rule:
-                been[rule.target].extend(rule)
-        RULES = list(been.values())
 
         for i in range(1,len(sys.argv)):
             sys.argv[i] = sys.argv[i] if os.path.isabs(sys.argv[i]) else os.path.join(caller_cwd(),sys.argv[i])
