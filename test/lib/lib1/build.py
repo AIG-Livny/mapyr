@@ -1,17 +1,17 @@
-#!/usr/bin/python3
+#!/usr/bin/env python
 
 def get_config() -> 'ToolConfig':
     cfg = ToolConfig()
     cfg.MAX_THREADS_NUM = 1
     return cfg
 
-def get_rules() -> list['Rule']:
-    config = c.Config()
+def get_rules(variant : str = '') -> list['Rule']:
+    config = c.Config('bin/liblib1.a')
     config.INCLUDE_DIRS = ['src']
-    config.set_paths_absolute()
+    config.make_abs()
 
-    rules = c.create_standard_rules_macro('bin/liblib1.a',upstream_config=config)
-    return rules
+    c.delete_objects_if_config_different(config)
+    return c.get_default_rules(config)
 
 #-----------FOOTER-----------
 # https://github.com/AIG-Livny/mapyr.git

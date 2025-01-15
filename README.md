@@ -1,4 +1,4 @@
-# Mapyr v.0.7.0
+# Mapyr v.0.7.1
 
 Mapyr - is a small not-installable in OS build system written in Python3 and inherits the Makefile rule system, extending and complementing it.
 
@@ -12,7 +12,7 @@ Create file `build.py` in the project root directory. Put this mandatory text in
 ```python
 #!/usr/bin/python3
 
-def get_rules() -> list['Rule']:
+def get_rules(variant:str) -> list['Rule']:
     return []
 #-----------FOOTER-----------
 try:
@@ -104,7 +104,7 @@ Downstream ↧→→→→ Downstream ↧→→→→ Downstream ↧→→→→
            ↓                ↓                ↓
     Config←↤         Config←↤         Config←↤     ...
            ↑                ↑                ↑
-  Upstream ←←↥←←←←←Upstream ←←↥←←←← Upstream ←←↥←← ...
+Upstream ←←↥←←←← Upstream ←←↥←←←← Upstream ←←↥←←←← ...
 ```
 
 Downstream config applying for current rule and children

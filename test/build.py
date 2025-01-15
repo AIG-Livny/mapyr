@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python
 
 def get_config() -> 'ToolConfig':
     cfg = ToolConfig()
@@ -6,6 +6,25 @@ def get_config() -> 'ToolConfig':
     return cfg
 
 def get_rules() -> list['Rule']:
+    import lib.lib1.build
+
+    config = c.Config('bin/main')
+    config.make_abs()
+
+    rules = c.get_default_rules(config)
+    c.add_static_library_rules(lib.lib1.build, config, rules)
+    rules.extend(lib.lib1.build.get_rules('release'))
+    lib_rule = find_rule('liblib1.a',rules)
+
+    config.INCLUDE_DIRS.extend(lib_rule.config.INCLUDE_DIRS)
+
+    main = find_rule('main', rules)
+    main.prerequisites.append(lib_rule.target)
+
+    return rules
+
+# get_default_rules does this:
+"""
     import lib.lib1.build
 
     conf = c.Config()
@@ -21,6 +40,7 @@ def get_rules() -> list['Rule']:
     c.add_rules_from_d_file('obj/src/main.d',rules)
 
     return rules
+"""
 
 #-----------FOOTER-----------
 from mapyr import *

@@ -5,11 +5,11 @@ import subprocess
 import concurrent.futures
 import importlib.util
 import inspect
-import copy
+import traceback
 
 from .logger import app_logger,console_handler,color_text
 
-VERSION = '0.7.0'
+VERSION = '0.7.2'
 
 #----------------------CONFIG--------------------------
 
@@ -35,6 +35,17 @@ class ToolConfig:
         '''
 
 CONFIG : ToolConfig = ToolConfig()
+
+class ConfigBase:
+    '''
+        Base class of configs
+    '''
+
+    def __init__(self):
+        self.CWD = caller_cwd()
+        '''
+            By default: path where config was created
+        '''
 
 #---------------------------CONFIG---------------------
 
@@ -99,7 +110,7 @@ def sh(cmd:list[str] | str, output_capture : bool = False) -> subprocess.Complet
     app_logger.debug(f'{result}')
     return result
 
-def silentremove(filename):
+def silentremove(filename:str):
     '''
         Remove file/directory or ignore error if not found
     '''
@@ -164,32 +175,6 @@ def caller_cwd() -> str:
             return os.path.dirname(os.path.abspath(path))
     raise RuntimeError('frame not found')
 
-def extend_config(dst:dict[str,]|None, src:dict[str,]|None) -> None:
-    '''
-        Extend config from other config values
-    '''
-    if type(dst) is not dict or type(src) is not dict:
-        raise RuntimeError('Config type is not dictionary. Maybe forgot __dict__?')
-
-    if src is None:
-        return
-    if dst is None:
-        dst = copy.deepcopy(src)
-        return
-
-    for key in src.keys():
-        if key not in dst:
-            dst[key] = copy.deepcopy(src[key])
-            continue
-
-        if type(src[key]) != type(dst[key]):
-            app_logger.error('Different types in configs under same key')
-            exit()
-
-        if type(dst[key]) is list:
-            dst[key].extend(src[key])
-            dst[key] = unify_list(dst[key])
-
 #----------------------END UTILS-----------------------
 
 #---------------------------RULE-----------------------
@@ -199,26 +184,22 @@ class Rule:
             self,
             target              : str,
             prerequisites       : list[str]         = [],
+            config              : ConfigBase        = None,
             exec                : 'function'        = None,
             phony               : bool              = False,
-            config              : dict              = None,
-            downstream_config   : dict              = None,
-            upstream_config     : dict              = None,
-            before_build        : list['function']  = [],
-            cwd                 : str               = None
         ) -> None:
 
-        self.cwd : str = cwd if cwd else caller_cwd()
+        self._cwd : str = caller_cwd()
         '''
             Directory, where rule was created
         '''
 
-        self.target : str = target if os.path.isabs(target) else os.path.join(self.cwd,target)
+        self.target : str = target if os.path.isabs(target) else os.path.join(self._cwd,target)
         '''
             Output file or phony name
         '''
 
-        self.prerequisites : list[str] = [ x if os.path.isabs(x) else os.path.join(self.cwd,x) for x in prerequisites ]
+        self.prerequisites : list[str] = [ x if os.path.isabs(x) else os.path.join(self._cwd,x) for x in prerequisites ]
         '''
             All targets needed be done before this rule
         '''
@@ -233,27 +214,9 @@ class Rule:
             Phony target not expects output file, and will be executed every time when called
         '''
 
-        self.config : dict = config if config else dict()
+        self.config : ConfigBase = config
         '''
-            Config only for this rule
-        '''
-
-        self.downstream_config : dict = downstream_config if downstream_config else dict()
-        '''
-            Config for this rule and children
-        '''
-
-        self.upstream_config : dict = upstream_config if upstream_config else dict()
-        '''
-            Config for this rule and parents
-        '''
-
-        self.before_build = before_build
-        '''
-            List of functions that will be executed after config exchanging
-                and before setting build_layer.
-            As exemple: can be used for checking validity build config
-                of exists output files.
+            Config binded to this rule
         '''
 
         self._build_layer :int = 0
@@ -264,7 +227,7 @@ class Rule:
         '''
 
     def __str__(self) -> str:
-        return f'{os.path.relpath(self.target,self.cwd)}:{[os.path.relpath(x,self.cwd) for x in self.prerequisites]}'
+        return f'{os.path.relpath(self.target,self._cwd)}:{[os.path.relpath(x,self._cwd) for x in self.prerequisites]}'
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -310,49 +273,6 @@ def recursive_run(target:str, function):
         stack.pop()
 
     _run(target)
-
-def exchange_configs(target:str) -> bool:
-    '''
-        Do config exchage.
-        This function expect this is root rule, so all work will be among children
-
-        Root             ChildRoot        GrandChildRoot
-        Downstream ↧→→→→ Downstream ↧→→→→ Downstream ↧→→→→ ...
-                   ↓                ↓                ↓
-            Config←↤         Config←↤         Config←↤     ...
-                   ↑                ↑                ↑
-          Upstream ←←↥←←←←←Upstream ←←↥←←←← Upstream ←←↥←← ...
-    '''
-
-    def _upstream_configs(rule:Rule, parent_rule:Rule) -> bool:
-        if parent_rule is None:
-            return False
-
-        # Config parent private <- child export
-        extend_config(parent_rule.config, rule.upstream_config)
-
-        # Config parent <- child export
-        extend_config(parent_rule.upstream_config, rule.upstream_config)
-
-        # Self export -> private
-        extend_config(rule.config, rule.upstream_config)
-        return False
-
-    recursive_run(target,_upstream_configs)
-
-    def _downstream_configs(rule:Rule):
-        for prq in rule.prerequisites:
-            prq_rule = find_rule(prq)
-            # Config parent -> child
-            extend_config(prq_rule.downstream_config, rule.downstream_config)
-
-            # Config parent -> child private
-            extend_config(prq_rule.config, rule.downstream_config)
-
-            _downstream_configs(prq_rule)
-
-    rule = find_rule(target)
-    _downstream_configs(rule)
 
 def set_build_layers(target:str) -> int:
     build_layers : dict[Rule,int] = dict()
@@ -404,13 +324,6 @@ def set_build_layers(target:str) -> int:
 #       but we can still build parents for other branches. Now we break if error on the layer
 #
 def build(target):
-    exchange_configs(target)
-
-    # Before build functions runing
-    for rule in [x for x in RULES if x.before_build]:
-        for func in rule.before_build:
-            func(rule)
-
     layers_num = set_build_layers(target)
 
     cc = os.cpu_count()
@@ -487,4 +400,4 @@ def process(get_rules_fnc, get_config_fnc=None):
             build(sys.argv[i])
 
     except Exception as e:
-        app_logger.error(e)
+        app_logger.error(traceback.format_exc())
