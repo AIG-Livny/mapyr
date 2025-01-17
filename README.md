@@ -52,7 +52,7 @@ Rule system come directly from GNU Make:
 If any from prerequisites newer than taraget then rebuid rule.
 
 ### Projects
-`Project` needed to share configations between them. `Project` joins multiple rules of one unit, and keep private, protected and public configurations. They act like C++, but are not as strict. You choose which configuration to take from the subproject. But nevertheless, they are separated in order to understand what the project wants to show us and what to leave for internal use.
+`Project` needed to share configations between them. `Project` joins multiple rules of one unit, and keep private, protected and public configurations. They act like in C++, but are not as strict. You choose which configuration to take from the subproject. But nevertheless, they are separated in order to understand what the project wants to show us and what to leave for internal use.
 
 `private` - only for this project
 
@@ -60,7 +60,5 @@ If any from prerequisites newer than taraget then rebuid rule.
 
 `public` - for anyone who want include us as subproject
 
-
-Create file `build.py` in the project root directory. Put this text into it:
 
 ### You can look at examples in the `test` directory
