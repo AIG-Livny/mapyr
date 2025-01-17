@@ -6,10 +6,11 @@ import concurrent.futures
 import importlib.util
 import inspect
 import traceback
+import copy
 
 from .logger import app_logger,console_handler,color_text
 
-VERSION = '0.7.2'
+VERSION = '0.8.0'
 
 #----------------------CONFIG--------------------------
 
@@ -36,18 +37,7 @@ class ToolConfig:
 
 CONFIG : ToolConfig = ToolConfig()
 
-class ConfigBase:
-    '''
-        Base class of configs
-    '''
-
-    def __init__(self):
-        self.CWD = caller_cwd()
-        '''
-            By default: path where config was created
-        '''
-
-#---------------------------CONFIG---------------------
+#----------------------END CONFIG----------------------
 
 #----------------------EXCEPTIONS----------------------
 
@@ -62,6 +52,8 @@ class Exceptions:
         "Prerequisite not found!"
     class SameRulesInTreeDetected(CustomException):
         "Same rules in rule tree detected"
+    class AtLeastOneConfig(CustomException):
+        "At least one config must be present"
 
 #----------------------END EXCEPTIONS------------------
 
@@ -177,31 +169,26 @@ def caller_cwd() -> str:
 
 #----------------------END UTILS-----------------------
 
-#---------------------------RULE-----------------------
+#----------------------RULE----------------------------
 
 class Rule:
     def __init__(
             self,
             target              : str,
-            prerequisites       : list[str]         = [],
-            config              : ConfigBase        = None,
+            parent              : 'ProjectBase',
+            prerequisites       : list['Rule']      = None,
             exec                : 'function'        = None,
             phony               : bool              = False,
         ) -> None:
 
-        self._cwd : str = caller_cwd()
-        '''
-            Directory, where rule was created
-        '''
-
-        self.target : str = target if os.path.isabs(target) else os.path.join(self._cwd,target)
+        self.target : str = target
         '''
             Output file or phony name
         '''
 
-        self.prerequisites : list[str] = [ x if os.path.isabs(x) else os.path.join(self._cwd,x) for x in prerequisites ]
+        self.prerequisites : list[Rule] = prerequisites if prerequisites else []
         '''
-            All targets needed be done before this rule
+            All rules that have to be done before this rule
         '''
 
         self.exec : function = exec
@@ -214,9 +201,9 @@ class Rule:
             Phony target not expects output file, and will be executed every time when called
         '''
 
-        self.config : ConfigBase = config
+        self.parent : ProjectBase = parent
         '''
-            Config binded to this rule
+            Parent project
         '''
 
         self._build_layer :int = 0
@@ -227,153 +214,247 @@ class Rule:
         '''
 
     def __str__(self) -> str:
-        return f'{os.path.relpath(self.target,self._cwd)}:{[os.path.relpath(x,self._cwd) for x in self.prerequisites]}'
+        return f'{self.target}:{self.prerequisites}'
 
     def __repr__(self) -> str:
         return self.__str__()
 
+#----------------------END RULE------------------------
 
-RULES : list[Rule] = []
 
-def find_rule(path:str, rules : list[Rule] = None) -> Rule|None:
+class ConfigBase:
     '''
-        Search by target path
+        Base class of configs
     '''
-    rules = RULES if rules is None else rules
-    for rule in rules:
-        if rule.target.endswith(path):
-            return rule
-    return None
 
-def recursive_run(target:str, function):
-    '''
-        Depth-first recursion
-        function(target:str, rule:Rule, parent_rule:Rule) -> bool
-        function return true if need stop
-    '''
-    stack : list[Rule] = []
+    def __init__(self):
+        self.CWD = caller_cwd()
+        '''
+            By default: path where config was created
+        '''
+        self.parent : ProjectBase = None
 
-    def _run(_target:str, parent_rule:Rule = None):
-        rule = find_rule(_target)
+    def extend(self,other:'ConfigBase'):
+        '''
+            Must be implemented in children
+        '''
+        raise NotImplementedError()
 
-        if not rule:
-            raise Exceptions.RuleNotFound(_target)
+#----------------------PROJECT-------------------------
 
-        if rule in stack:
-            raise Exceptions.CircularDetected()
+class ProjectBase():
+    def __init__(self,
+            name:str,
+            target:str,
+            private_config:ConfigBase = None,
+            protected_config:ConfigBase = None,
+            public_config:ConfigBase = None,
+            subprojects:list['ProjectBase'] = None
+        ):
+        if not private_config and not protected_config and not public_config:
+            raise Exceptions.AtLeastOneConfig()
 
-        stack.append(rule)
-        for prq in rule.prerequisites:
-            if _run(prq, rule) == True:
-                return True
+        self.name = name
+        self.target = target
+        self.main_rule : Rule = None
+        self.rules : list[Rule] = []
+        self.subprojects : list['ProjectBase'] = subprojects if subprojects else []
 
-        if function(rule, parent_rule) == True:
-            return True
+        self.private_config     : ConfigBase = None
+        self.public_config      : ConfigBase = None
+        self.protected_config   : ConfigBase = None
 
-        stack.pop()
+        if private_config:
+            self.private_config = copy.deepcopy(private_config)
+            self.private_config.parent = self
 
-    _run(target)
+        if public_config:
+            if self.private_config:
+                self.private_config.extend(public_config)
+            else:
+                self.private_config = copy.deepcopy(public_config)
+                self.private_config.parent = self
+            self.public_config = copy.deepcopy(public_config)
+            self.public_config.parent = self
 
-def set_build_layers(target:str) -> int:
-    build_layers : dict[Rule,int] = dict()
+        if protected_config:
+            if self.private_config:
+                self.private_config.extend(protected_config)
+            else:
+                self.private_config = copy.deepcopy(protected_config)
+                self.private_config.parent = self
+            self.protected_config = copy.deepcopy(protected_config)
+            self.protected_config.parent = self
 
-    def _will_build(rule:Rule, parent_rule:Rule) -> bool:
-        if build_layers[rule] == 0:
-            build_layers[rule] = 1
+    def find_rule(self, target:str) -> Rule|None:
+        '''
+            Search by target path
+        '''
+        for rule in self.rules:
+            if rule.target.endswith(target):
+                return rule
+        return None
 
-        # If we will build then parent must built too
-        if parent_rule:
-            if build_layers.setdefault(parent_rule, build_layers[rule] + 1) <= build_layers[rule]:
-                build_layers[parent_rule] = build_layers[rule] + 1
-            parent_rule._build_layer = build_layers[parent_rule]
-        rule._build_layer = build_layers[rule]
-        return False
+    def rule_recursive_run(self, start_rule:Rule, function):
+        '''
+            Depth-first recursion for rules
+            function(rule:Rule, parent_rule:Rule) -> bool
+            function return true if need stop
+        '''
 
-    def _set_build_layers(rule:Rule, parent_rule:Rule) -> bool:
-        build_layers.setdefault(rule,rule._build_layer)
-        if build_layers[rule] > 0:
-            return _will_build(rule,parent_rule)
+        stack : list[Rule] = []
 
-        if rule.phony:
-            return _will_build(rule,parent_rule)
+        def _run(rule:Rule, parent_rule:Rule = None):
+            if not rule:
+                return
 
-        # Rule-file skip
-        if not rule.prerequisites:
+            if rule in stack:
+               raise Exceptions.CircularDetected()
+
+            stack.append(rule)
+            for prq_rule in rule.prerequisites:
+               if _run(prq_rule, rule) == True:
+                   return True
+
+            if function(rule, parent_rule) == True:
+               return True
+
+            stack.pop()
+
+        _run(start_rule)
+
+    def project_recursive_run(self, function):
+        '''
+            Depth-first recursion for projects
+            function(project:ProjectBase, parent_project:ProjectBase) -> bool
+            function return true if need stop
+        '''
+
+        stack : list[ProjectBase] = []
+
+        def _run(project:ProjectBase, parent_project:ProjectBase = None):
+            if not project:
+                return
+
+            if project in stack:
+               raise Exceptions.CircularDetected()
+
+            stack.append(project)
+            for sp in project.subprojects:
+               if _run(sp, project) == True:
+                   return True
+
+            if function(project, parent_project) == True:
+               return True
+
+            stack.pop()
+
+        _run(self)
+
+    def set_build_layers(self, start_rule:Rule) -> int:
+        build_layers : dict[Rule,int] = dict()
+
+        def _will_build(rule:Rule, parent_rule:Rule) -> bool:
+            if build_layers[rule] == 0:
+                build_layers[rule] = 1
+
+            # If we will build then parent must built too
+            if parent_rule:
+                if build_layers.setdefault(parent_rule, build_layers[rule] + 1) <= build_layers[rule]:
+                    build_layers[parent_rule] = build_layers[rule] + 1
+                parent_rule._build_layer = build_layers[parent_rule]
+            rule._build_layer = build_layers[rule]
             return False
 
-        # Target doesn't exists
-        if not os.path.exists(rule.target):
-            return _will_build(rule,parent_rule)
-
-        for prq in rule.prerequisites:
-            # Prerequisite not builded yet
-            # He will set our build level as parent rule
-            if not os.path.exists(prq):
-                break
-            out_date = os.path.getmtime(rule.target)
-            src_date = os.path.getmtime(prq)
-            if src_date > out_date:
+        def _set_build_layers(rule:Rule, parent_rule:Rule) -> bool:
+            build_layers.setdefault(rule,rule._build_layer)
+            if build_layers[rule] > 0:
                 return _will_build(rule,parent_rule)
-        return False
 
-    recursive_run(target,_set_build_layers)
-    return max(build_layers.values())
+            if rule.phony:
+                return _will_build(rule,parent_rule)
 
-#
-# TODO: if error somewhere in middle of the branch then we can not keep building parents
-#       but we can still build parents for other branches. Now we break if error on the layer
-#
-def build(target):
-    layers_num = set_build_layers(target)
+            # Rule-file skip
+            if not rule.prerequisites:
+                return False
 
-    cc = os.cpu_count()
-    threads_num = cc if CONFIG.MAX_THREADS_NUM > cc else CONFIG.MAX_THREADS_NUM
-    error : bool = False
-    any_builds = False
-    for layer_num in range(1,layers_num+1):
+            # Target doesn't exists
+            if not os.path.exists(rule.target):
+                return _will_build(rule,parent_rule)
 
-        layer : list[Rule] = [x for x in RULES if x._build_layer == layer_num]
-        for rule in layer:
-            # Not buildable targets (simple file) will never be updated
-            # So we "update" them artifically to avoid endless rebuilds
-            if rule.prerequisites and not rule.exec and not rule.phony:
-                os.utime(rule.target)
-
-        layer_exec : list[Rule] = [x for x in layer if x.exec]
-
-        if not layer_exec:
-            continue
-
-        any_builds = True
-        problem_rule : Rule = None
-
-        with concurrent.futures.ProcessPoolExecutor(max_workers=threads_num) as executor:
-            builders = [executor.submit(x.exec,x) for x in layer_exec]
-            for i in range(len(builders)):
-                if builders[i].result() != 0:
-                    error = True
-                    problem_rule=layer_exec[i]
+            for prq in rule.prerequisites:
+                # Prerequisite not builded yet
+                # He will set our build level as parent rule
+                if not os.path.exists(prq.target):
                     break
-            if error:
-                break
-    if error:
-        app_logger.error(f'{os.path.relpath(problem_rule.target, caller_cwd()) }: Error. Stopped.')
-        return False
+                out_date = os.path.getmtime(rule.target)
+                src_date = os.path.getmtime(prq.target)
+                if src_date > out_date:
+                    return _will_build(rule,parent_rule)
+            return False
 
-    if not any_builds:
-        app_logger.info('Nothing to build')
+        self.rule_recursive_run(start_rule,_set_build_layers)
+        return max(build_layers.values())
+
+    def get_rules_layer(self, layer_num:int) -> list[Rule]:
+        result = []
+        def _run(rule:Rule, parent_rule:Rule):
+            if rule._build_layer == layer_num:
+                result.append(rule)
+        self.rule_recursive_run(self.main_rule, _run)
+        return result
+
+    #
+    # TODO: if error somewhere in middle of the branch then we can not keep building parents
+    #       but we can still build parents for other branches. Now we break if error on the layer
+    #
+    def build(self, _rule:Rule):
+        layers_num = self.set_build_layers(_rule)
+
+        cc = os.cpu_count()
+        threads_num = cc if CONFIG.MAX_THREADS_NUM > cc else CONFIG.MAX_THREADS_NUM
+        error : bool = False
+        any_builds = False
+        for layer_num in range(1,layers_num+1):
+
+            layer : list[Rule] = self.get_rules_layer(layer_num)
+            for rule in layer:
+                # Not buildable targets (simple file) will never be updated
+                # So we "update" them artifically to avoid endless rebuilds
+                if rule.prerequisites and not rule.exec and not rule.phony:
+                    os.utime(rule.target)
+
+            layer_exec : list[Rule] = [x for x in layer if x.exec]
+
+            if not layer_exec:
+                continue
+
+            any_builds = True
+            problem_rule : Rule = None
+
+            with concurrent.futures.ProcessPoolExecutor(max_workers=threads_num) as executor:
+                builders = [executor.submit(x.exec,x) for x in layer_exec]
+                for i in range(len(builders)):
+                    if builders[i].result() != 0:
+                        error = True
+                        problem_rule=layer_exec[i]
+                        break
+                if error:
+                    break
+        if error:
+            app_logger.error(f'{os.path.relpath(problem_rule.target, caller_cwd()) }: Error. Stopped.')
+            return False
+
+        if not any_builds:
+            app_logger.info('Nothing to build')
+            return True
+
+        app_logger.info(color_text(32,'Done'))
         return True
 
-    app_logger.info(color_text(32,'Done'))
-    return True
+#----------------------END PROJECT---------------------
 
-def help():
-    cwd = caller_cwd()
-    print('\n'.join([ os.path.relpath(x.target,cwd) for x in RULES if x.phony ]))
-#---------------------------END RULE-------------------
-
-def process(get_rules_fnc, get_config_fnc=None):
-    global RULES
+def process(get_project_fnc, get_config_fnc=None):
     global CONFIG
     global console_handler
 
@@ -385,19 +466,20 @@ def process(get_rules_fnc, get_config_fnc=None):
     if CONFIG.MINIMUM_REQUIRED_VERSION > VERSION:
         app_logger.warning(f"Required version {CONFIG.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!")
 
-    if len(sys.argv) < 2:
-        sys.argv.append('build')
+    project_name = 'main'
+    target = 'build'
+
+    match len(sys.argv):
+        case 1:pass
+        case 2:
+            target = sys.argv[1]
+        case 3|_:
+            project_name = sys.argv[1]
+            target = sys.argv[2]
 
     try:
-        RULES = get_rules_fnc()
-
-        if 'help' in sys.argv:
-            help()
-            exit()
-
-        for i in range(1,len(sys.argv)):
-            sys.argv[i] = sys.argv[i] if os.path.isabs(sys.argv[i]) else os.path.join(caller_cwd(),sys.argv[i])
-            build(sys.argv[i])
-
+        project : ProjectBase = get_project_fnc(project_name)
+        rule = project.find_rule(target)
+        project.build(rule)
     except Exception as e:
         app_logger.error(traceback.format_exc())

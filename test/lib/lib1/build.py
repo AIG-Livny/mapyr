@@ -1,20 +1,22 @@
 #!/usr/bin/env python
 
-def get_config() -> 'ToolConfig':
-    cfg = ToolConfig()
+def get_config() -> 'core.ToolConfig':
+    cfg = core.ToolConfig()
     cfg.MAX_THREADS_NUM = 1
     return cfg
 
-def get_rules(variant : str = '') -> list['Rule']:
-    config = c.Config('bin/liblib1.a')
+def get_project(name:str = 'main') -> 'c.Project':
+    config = c.Config()
     config.INCLUDE_DIRS = ['src']
-    config.make_abs()
 
-    c.delete_objects_if_config_different(config)
-    return c.get_default_rules(config)
+    # Put config in `public_config` to show what values we want to expose to other projects
+    # in `add_default_rules` of parent it be automatically added in parent private_config
+
+    project = c.Project('main','bin/liblib1.a',public_config=config)
+    c.add_default_rules(project)
+    return project
 
 #-----------FOOTER-----------
-# https://github.com/AIG-Livny/mapyr.git
 from mapyr import *
 # Disable footer in tests
 '''
@@ -30,4 +32,4 @@ except:
 
 '''
 if __name__ == "__main__":
-    process(get_rules,get_config if 'get_config' in dir() else None)
+    core.process(get_project, get_config)

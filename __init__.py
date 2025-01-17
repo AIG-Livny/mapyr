@@ -1,3 +1,3 @@
-from mapyr.core import *
-import mapyr.c as c
-import mapyr.python as python
+from . import core
+from . import c
+from . import python

@@ -4,13 +4,8 @@ from .logger import app_logger, color_text
 import json
 
 class Config(ConfigBase):
-    def __init__(self, target:str) -> None:
+    def __init__(self) -> None:
         super().__init__()
-
-        self.TARGET_PATH : str = target
-        '''
-            Target file path
-        '''
 
         self.SRC_DIRS : list[str] = ['src']
         '''
@@ -77,6 +72,20 @@ class Config(ConfigBase):
             Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
         '''
 
+    def get_build_string(self) -> str:
+        '''
+            Config string need to sign config of built files
+            If any flag, that influences on the result file was changed then need to rebuild all targets
+        '''
+        lst = [
+            self.AR,
+            self.COMPILER,
+            self.CFLAGS,
+            self.DEFINES,
+            self.LINK_FLAGS,
+        ]
+        return str(lst)
+
     def get_abs_val(self, val:str|list[str]):
         if type(val) == str:
             if not os.path.isabs(val):
@@ -101,20 +110,52 @@ class Config(ConfigBase):
                 continue
             self.__dict__[k] = self.get_abs_val(self.__dict__[k])
 
-    def get_build_string(self) -> str:
+    def extend(self, other:'Config'):
+        self.INCLUDE_DIRS.extend(other.get_abs_val(other.INCLUDE_DIRS))
+
+class Project(ProjectBase):
+    def __init__(self,
+            name:str,
+            target:str,
+            private_config:Config = None,
+            protected_config:Config = None,
+            public_config:Config = None,
+            subprojects:list['ProjectBase'] = None
+        ):
+        super().__init__(name, target, private_config, protected_config, public_config, subprojects)
+
+        self.private_config     : Config
+        self.protected_config   : Config
+        self.public_config      : Config
+
+        self.delete_objects_if_config_different()
+
+    def delete_objects_if_config_different(self):
         '''
-            Config string need to sign config of built files
-            If any flag, that influences on the result file was changed then need to rebuild all targets
+            If already built objects config not match current config
+            we must delete old objects and build new
         '''
-        lst = [
-            self.TARGET_PATH,
-            self.AR,
-            self.COMPILER,
-            self.CFLAGS,
-            self.DEFINES,
-            self.LINK_FLAGS,
-        ]
-        return str(lst)
+        if os.path.isabs(self.private_config.OBJ_PATH):
+            ap = self.private_config.OBJ_PATH
+        else:
+            ap = os.path.join(self.private_config.CWD, self.private_config.OBJ_PATH)
+
+        cfg_path = os.path.join(ap,'config_tag')
+        if os.path.exists(cfg_path):
+            with open(cfg_path, 'r') as f:
+                if f.read() != self.private_config.get_build_string():
+                    silentremove(ap)
+        return 0
+
+    def build(self, rule:Rule):
+        # Before build, make all configs absolute path
+        def _set_absolute_config_paths(project:ProjectBase, parent_project:ProjectBase):
+            if type(project) is Project:
+                project.private_config.make_abs()
+
+        self.project_recursive_run(_set_absolute_config_paths)
+
+        return super().build(rule)
 
 def vscode_make_cpp_properties(rule:Rule,cfg:'Config'):
     '''
@@ -146,7 +187,7 @@ def build_object(rule:Rule) -> int:
 
     os.makedirs(os.path.dirname(rule.target),exist_ok=True)
 
-    cfg : Config = rule.config
+    cfg : Config = rule.parent.private_config
 
     cmd = \
         [cfg.COMPILER,'-MT','','-MMD','-MP','-MF',''] \
@@ -156,12 +197,12 @@ def build_object(rule:Rule) -> int:
         + ['-c','-o','','']
 
     path_wo_ext     = os.path.splitext(rule.target)[0]
-    cmd[2]     = rule.prerequisites[0]
+    cmd[2]     = rule.prerequisites[0].target
     cmd[6]     = f"{path_wo_ext}.d"
     cmd[-2]    = rule.target
-    cmd[-1]    = rule.prerequisites[0]
+    cmd[-1]    = rule.prerequisites[0].target
     # mapyr special flags
-    cmd.insert(7, f'-D__MAPYR__FILENAME__="{os.path.basename(rule.prerequisites[0])}"')
+    cmd.insert(7, f'-D__MAPYR__FILENAME__="{os.path.basename(rule.prerequisites[0].target)}"')
     return sh(cmd).returncode
 
 def link_executable(rule:Rule) -> int:
@@ -169,19 +210,19 @@ def link_executable(rule:Rule) -> int:
 
     os.makedirs(os.path.dirname(rule.target),exist_ok=True)
 
-    cfg : Config = rule.config
+    cfg : Config = rule.parent.private_config
 
     cmd = [cfg.COMPILER] \
     + cfg.LINK_FLAGS \
     + [f"-L{x}" for x in cfg.LIB_DIRS] \
-    + rule.prerequisites \
+    + [x.target for x in rule.prerequisites] \
     + ['-o',rule.target] \
     + [f"-l{x}" for x in cfg.LIBS]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
         vscode_make_cpp_properties(rule, cfg)
 
-    with open(os.path.join(rule._cwd,cfg.OBJ_PATH,'config_tag'),'w+') as f:
+    with open(os.path.join(cfg.CWD, cfg.OBJ_PATH,'config_tag'),'w+') as f:
         f.write(cfg.get_build_string())
 
     return sh(cmd).returncode
@@ -191,35 +232,22 @@ def link_static(rule:Rule) -> int:
 
     os.makedirs(os.path.dirname(rule.target),exist_ok=True)
 
-    cfg : Config = rule.config
+    cfg : Config = rule.parent.private_config
 
     cmd = [cfg.AR] \
     + [''.join(cfg.AR_FLAGS)] \
     + [rule.target] \
-    + rule.prerequisites
+    + [x.target for x in rule.prerequisites]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
         vscode_make_cpp_properties(rule, cfg)
 
-    with open(os.path.join(rule._cwd,cfg.OBJ_PATH,'config_tag'),'w+') as f:
+    with open(os.path.join(cfg.CWD,cfg.OBJ_PATH,'config_tag'),'w+') as f:
         f.write(cfg.get_build_string())
 
     return sh(cmd).returncode
 
-def delete_objects_if_config_different(config:Config) -> int:
-    '''
-        If already built objects config not match current config
-        we must delete old objects and build new
-    '''
-    ap = config.get_abs_val(config.OBJ_PATH)
-    cfg_path = os.path.join(ap,'config_tag')
-    if os.path.exists(cfg_path):
-        with open(cfg_path, 'r') as f:
-            if f.read() != config.get_build_string():
-                silentremove(ap)
-    return 0
-
-def add_rules_from_d_file(path : str, rules:list[Rule]):
+def add_rules_from_d_file(path:str,project:ProjectBase):
     if not os.path.isabs(path):
         path = os.path.join(caller_cwd(),path)
     if not os.path.isfile(path):
@@ -243,11 +271,17 @@ def add_rules_from_d_file(path : str, rules:list[Rule]):
 
         target = spl[0]
         prerequisites = [x for x in spl[1].strip().split(' ') if x != target] if spl[1] else []
-        rule = find_rule(target,rules)
-        if rule:
-            rule.prerequisites.extend(prerequisites)
-        else:
-            rules.append(Rule(target,prerequisites))
+        rule = project.find_rule(target)
+        if not rule:
+            rule = Rule(target,project)
+
+        for prq in prerequisites:
+            prq_rule = project.find_rule(prq)
+            if not prq_rule:
+                prq_rule = Rule(prq,project)
+                project.rules.append(prq_rule)
+            rule.prerequisites.append(prq_rule)
+
 
 def gen_vscode_config(rule:Rule):
     '''
@@ -280,54 +314,49 @@ def pkg_config_search(packages:list[str],config:Config):
     config.LIBS.extend([x[2:] for x in spl if x.startswith('-l')])
 
 
-def get_default_rules(config:Config) -> list[Rule]:
+def add_default_rules(project:ProjectBase) -> None:
     '''
         Auto create rules for C project
     '''
-
-    rules = []
-    cwd = caller_cwd()
-    sources = find_files(config.SRC_DIRS,['.c','.cc','.cpp'],cwd)
-    objects = [os.path.join(cwd,'obj',os.path.relpath(os.path.splitext(x)[0],cwd).replace('../','updir/'))+'.o' for x in sources]
+    cfg : Config = project.private_config
+    target_path = cfg.parent.target if os.path.isabs(cfg.parent.target) else os.path.join(cfg.CWD,cfg.parent.target)
+    cfg.SOURCES = cfg.get_abs_val(cfg.SOURCES) + find_files(cfg.SRC_DIRS,['.c','.cc','.cpp'],cfg.CWD)
+    objects = [os.path.join(cfg.CWD,'obj',os.path.relpath(os.path.splitext(x)[0],cfg.CWD).replace('../','updir/'))+'.o' for x in cfg.SOURCES]
     deps = [f'{os.path.splitext(x)[0]}.d' for x in objects]
 
-    rules = [
-        Rule('build',[config.TARGET_PATH],phony=True),
-    ]
+    ext = os.path.splitext(target_path)[1]
+    object_rules = []
 
-    ext = os.path.splitext(config.TARGET_PATH)[1]
+    for i in range(len(cfg.SOURCES)):
+        src_rule = Rule(cfg.SOURCES[i], cfg.parent)
+        project.rules.append(src_rule)
+
+        object_rule = Rule(objects[i], cfg.parent, [src_rule], build_object,False)
+        object_rules.append(object_rule)
+
+        project.rules.append(object_rule)
+        add_rules_from_d_file(deps[i],project)
 
     match ext:
         case '.a':
-            config.LIBS.append(os.path.basename(config.TARGET_PATH)[3:-2])
-            config.LIB_DIRS.append(os.path.join(cwd, os.path.dirname(config.TARGET_PATH)))
+            if not project.public_config:
+                project.public_config = cfg
+            project.main_rule = Rule(cfg.parent.target, cfg.parent, object_rules, link_static, False)
+            project.rules.append(project.main_rule)
 
-            rules.append(Rule(config.TARGET_PATH,objects,config,link_static,False))
+            pub_cfg : Config = project.public_config
+            pub_cfg.LIBS.append(os.path.basename(target_path)[3:-2])
+            pub_cfg.LIB_DIRS.append(os.path.dirname(target_path))
+
         case '.so','.dll':
             raise NotImplementedError('The shared library rules maker not implemented yet')
-        case '.exe'|_:
-            rules.append(Rule(config.TARGET_PATH,objects,config,link_executable,False))
 
-    for i in range(len(sources)):
-        rules.append(Rule(objects[i],[sources[i]],config, build_object,False))
-        rules.append(Rule(sources[i]))
-        add_rules_from_d_file(deps[i],rules)
+        case '.exe'|'':
+            project.main_rule = Rule(cfg.parent.target, cfg.parent, object_rules, link_executable, False)
+            project.rules.append(project.main_rule)
+            for sp in project.subprojects:
+                project.main_rule.prerequisites.append(sp.main_rule)
+                project.private_config.extend(sp.public_config)
 
-    return rules
-
-def add_static_library_rules(module, main_rule:Rule):
-    '''
-        Add static library to rules
-    '''
-
-    lib_rules = module.get_rules()
-    lib_path = os.path.dirname(module.__file__)
-    lib_rule : Rule = find_rule(f'{lib_path}/build',lib_rules)
-
-    config.INCLUDE_DIRS.extend(lib_rule.config.INCLUDE_DIRS)
-    config.LIBS.append(lib_rule.prerequisites[0][3:-2])
-    config.LIB_DIRS.append(lib_path)
-
-    main_rule.prerequisites.extend([
-        lib_rule.prerequisites[0]
-    ])
+    rule_build = Rule('build',project,[project.main_rule],phony=True)
+    project.rules.append(rule_build)

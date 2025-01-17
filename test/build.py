@@ -1,48 +1,35 @@
 #!/usr/bin/env python
 
-def get_config() -> 'ToolConfig':
-    cfg = ToolConfig()
+def get_config() -> 'core.ToolConfig':
+    cfg = core.ToolConfig()
     cfg.MAX_THREADS_NUM = 1
     return cfg
 
-def get_rules() -> list['Rule']:
+# `Name` can be passed out of parent projects or command line
+# it can be build config or whatever you want
+def get_project(name:str) -> 'c.Project':
     import lib.lib1.build
 
-    config = c.Config('bin/main')
-    config.make_abs()
+    # Create config and inject artificial dependency on generated file
+    config = c.Config()
+    config.SOURCES = ['src/script_artefact.c']
 
-    rules = c.get_default_rules(config)
-    c.add_static_library_rules(lib.lib1.build, config, rules)
-    rules.extend(lib.lib1.build.get_rules('release'))
-    lib_rule = find_rule('liblib1.a',rules)
+    # Create project and make default rules
+    project = c.Project('release','bin/main',config,subprojects=[lib.lib1.build.get_project()])
+    c.add_default_rules(project)
 
-    config.INCLUDE_DIRS.extend(lib_rule.config.INCLUDE_DIRS)
+    # Add dependency of the script_artefact.c on python script
+    script = core.Rule('script.py',project)
+    src_rule = project.find_rule('script_artefact.c')
+    src_rule.prerequisites.append(script)
 
-    main = find_rule('main', rules)
-    main.prerequisites.append(lib_rule.target)
+    # Add method what we have to run to make the target
+    src_rule.exec = python.run
 
-    return rules
-
-# get_default_rules does this:
-"""
-    import lib.lib1.build
-
-    conf = c.Config()
-    rules = lib.lib1.build.get_rules()
-    rules.append(Rule('build',['bin/main'],phony=True))
-    rules.append(Rule('bin/main',['obj/src/main.o','obj/src/script_artefact.o',find_rule('bin/liblib1.a',rules).target], config=conf.__dict__, exec=c.link_executable, before_build=[c.check_build]))
-    rules.append(Rule('obj/src/main.o',['src/main.c'],exec=c.build_object,config=conf.__dict__))
-    rules.append(Rule('obj/src/script_artefact.o',['src/script_artefact.c'],exec=c.build_object,config=conf.__dict__))
-    rules.append(Rule('src/script_artefact.c',['script.py'],exec=python.run,config=conf.__dict__))
-    rules.append(Rule('src/main.c'))
-    rules.append(Rule('script.py'))
-
-    c.add_rules_from_d_file('obj/src/main.d',rules)
-
-    return rules
-"""
+    return project
 
 #-----------FOOTER-----------
+# Disable footer in tests
 from mapyr import *
 '''
 #-----------FOOTER-----------
@@ -57,4 +44,4 @@ except:
 
 '''
 if __name__ == "__main__":
-    process(get_rules,get_config if 'get_config' in dir() else None)
+    core.process(get_project,get_config)
