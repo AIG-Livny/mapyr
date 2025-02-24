@@ -282,7 +282,6 @@ def add_rules_from_d_file(path:str,project:ProjectBase):
                 project.rules.append(prq_rule)
             rule.prerequisites.append(prq_rule)
 
-
 def gen_vscode_config(rule:Rule):
     '''
         Default vs code configs
@@ -296,6 +295,13 @@ def gen_vscode_config(rule:Rule):
     with open('.vscode/launch.json','w+') as flaunch, open('.vscode/tasks.json','w+') as ftasks:
         json.dump(launch, flaunch, indent=4)
         json.dump(tasks, ftasks, indent=4)
+
+def clean_project(rule:Rule) -> int:
+    silentremove(rule.parent.private_config.OBJ_PATH)
+
+    for sp in rule.parent.subprojects:
+        silentremove(sp.private_config.OBJ_PATH)
+    return 0
 
 def pkg_config_search(packages:list[str],config:Config):
     '''
@@ -319,15 +325,24 @@ def add_default_rules(project:ProjectBase) -> None:
         Auto create rules for C project
     '''
     cfg : Config = project.private_config
+
+    # Path to main target
     target_path = cfg.parent.target if os.path.isabs(cfg.parent.target) else os.path.join(cfg.CWD,cfg.parent.target)
+
+    # Sources
     cfg.SOURCES = cfg.get_abs_val(cfg.SOURCES) + find_files(cfg.SRC_DIRS,['.c','.cc','.cpp'],cfg.CWD)
+    cfg.SOURCES = unify_list(cfg.SOURCES)
+
     objects = [os.path.join(cfg.CWD,'obj',os.path.relpath(os.path.splitext(x)[0],cfg.CWD).replace('../','updir/'))+'.o' for x in cfg.SOURCES]
+
+    # Dependencies files '.d' paths
     deps = [f'{os.path.splitext(x)[0]}.d' for x in objects]
 
     ext = os.path.splitext(target_path)[1]
     object_rules = []
 
     for i in range(len(cfg.SOURCES)):
+        # Create rules for sources/objects
         src_rule = Rule(cfg.SOURCES[i], cfg.parent)
         project.rules.append(src_rule)
 
@@ -359,4 +374,7 @@ def add_default_rules(project:ProjectBase) -> None:
                 project.private_config.extend(sp.public_config)
 
     rule_build = Rule('build',project,[project.main_rule],phony=True)
+    rule_clean = Rule('clean',project,exec=clean_project,phony=True)
+
     project.rules.append(rule_build)
+    project.rules.append(rule_clean)

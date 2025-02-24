@@ -402,6 +402,12 @@ class ProjectBase():
             if rule._build_layer == layer_num:
                 result.append(rule)
         self.rule_recursive_run(self.main_rule, _run)
+
+        # Serach phony targets
+        for r in self.rules:
+            if r.phony and r._build_layer == layer_num:
+                result.append(r)
+
         return result
 
     #
@@ -480,6 +486,8 @@ def process(get_project_fnc, get_config_fnc=None):
     try:
         project : ProjectBase = get_project_fnc(project_name)
         rule = project.find_rule(target)
+        if not rule:
+            raise Exceptions.RuleNotFound()
         project.build(rule)
     except Exception as e:
         app_logger.error(traceback.format_exc())
