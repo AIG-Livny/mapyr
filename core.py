@@ -396,17 +396,12 @@ class ProjectBase():
         self.rule_recursive_run(start_rule,_set_build_layers)
         return max(build_layers.values())
 
-    def get_rules_layer(self, layer_num:int) -> list[Rule]:
+    def get_rules_layer(self, layer_num:int, start_rule:Rule) -> list[Rule]:
         result = []
         def _run(rule:Rule, parent_rule:Rule):
             if rule._build_layer == layer_num:
                 result.append(rule)
-        self.rule_recursive_run(self.main_rule, _run)
-
-        # Serach phony targets
-        for r in self.rules:
-            if r.phony and r._build_layer == layer_num:
-                result.append(r)
+        self.rule_recursive_run(start_rule, _run)
 
         return result
 
@@ -423,7 +418,7 @@ class ProjectBase():
         any_builds = False
         for layer_num in range(1,layers_num+1):
 
-            layer : list[Rule] = self.get_rules_layer(layer_num)
+            layer : list[Rule] = self.get_rules_layer(layer_num, _rule)
             for rule in layer:
                 # Not buildable targets (simple file) will never be updated
                 # So we "update" them artifically to avoid endless rebuilds
@@ -487,7 +482,7 @@ def process(get_project_fnc, get_config_fnc=None):
         project : ProjectBase = get_project_fnc(project_name)
         rule = project.find_rule(target)
         if not rule:
-            raise Exceptions.RuleNotFound()
+            raise Exceptions.RuleNotFound(target)
         project.build(rule)
     except Exception as e:
         app_logger.error(traceback.format_exc())

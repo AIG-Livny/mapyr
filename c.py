@@ -215,14 +215,17 @@ def link_executable(rule:Rule) -> int:
     cmd = [cfg.COMPILER] \
     + cfg.LINK_FLAGS \
     + [f"-L{x}" for x in cfg.LIB_DIRS] \
-    + [x.target for x in rule.prerequisites] \
+    + [x.target for x in rule.prerequisites if not x.phony] \
     + ['-o',rule.target] \
     + [f"-l{x}" for x in cfg.LIBS]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
         vscode_make_cpp_properties(rule, cfg)
 
-    with open(os.path.join(cfg.CWD, cfg.OBJ_PATH,'config_tag'),'w+') as f:
+    abs_dir_obj=os.path.join(cfg.CWD, cfg.OBJ_PATH)
+    if not os.path.exists(abs_dir_obj):
+        os.makedirs(abs_dir_obj,exist_ok=True)
+    with open(os.path.join(abs_dir_obj,'config_tag'),'w+') as f:
         f.write(cfg.get_build_string())
 
     return sh(cmd).returncode
@@ -237,12 +240,15 @@ def link_static(rule:Rule) -> int:
     cmd = [cfg.AR] \
     + [''.join(cfg.AR_FLAGS)] \
     + [rule.target] \
-    + [x.target for x in rule.prerequisites]
+    + [x.target for x in rule.prerequisites if not x.phony]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
         vscode_make_cpp_properties(rule, cfg)
 
-    with open(os.path.join(cfg.CWD,cfg.OBJ_PATH,'config_tag'),'w+') as f:
+    abs_dir_obj=os.path.join(cfg.CWD, cfg.OBJ_PATH)
+    if not os.path.exists(abs_dir_obj):
+        os.makedirs(abs_dir_obj,exist_ok=True)
+    with open(os.path.join(abs_dir_obj,'config_tag'),'w+') as f:
         f.write(cfg.get_build_string())
 
     return sh(cmd).returncode
