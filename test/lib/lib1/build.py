@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-def get_config() -> 'core.ToolConfig':
-    cfg = core.ToolConfig()
+def get_config() -> 'ToolConfig':
+    cfg = ToolConfig()
     cfg.MAX_THREADS_NUM = 1
     return cfg
 
@@ -32,4 +32,4 @@ except:
 
 '''
 if __name__ == "__main__":
-    core.process(get_project, get_config)
+    process(get_project, get_config)

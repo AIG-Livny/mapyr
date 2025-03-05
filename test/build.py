@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-def get_config() -> 'core.ToolConfig':
-    cfg = core.ToolConfig()
+def get_config() -> 'ToolConfig':
+    cfg = ToolConfig()
     cfg.MAX_THREADS_NUM = 1
     return cfg
 
@@ -19,7 +19,7 @@ def get_project(name:str) -> 'c.Project':
     c.add_default_rules(project)
 
     # Add dependency of the script_artefact.c on python script
-    script = core.Rule('script.py',project)
+    script = Rule('script.py',project)
     src_rule = project.find_rule('script_artefact.c')
     src_rule.prerequisites.append(script)
 
@@ -44,4 +44,4 @@ except:
 
 '''
 if __name__ == "__main__":
-    core.process(get_project,get_config)
+    process(get_project,get_config)

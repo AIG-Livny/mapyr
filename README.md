@@ -10,9 +10,16 @@ Advantages of Mapyr:
  - It can be used as is for any language. Language modules just for convenience.
 
 # Usage
-Mapyr starts with `build.py` file. This footer will clone the Mapyr repo if it no exists yet. The Mapyr repository is not expected to become part of your project, but `build.py`.
+Mapyr starts with `build.py` file. Footer will clone the Mapyr repo if it no exists yet. The Mapyr repository is not expected to become part of your project, but `build.py`.
 
+Example of `build.py`:
 ```python
+#!/usr/bin/env python
+
+def get_project(name:str) -> 'ProjectBase':
+    cfg = ConfigBase()
+    return ProjectBase('debug','target-file', cfg)
+
 #-----------FOOTER-----------
 try:
     from mapyr import *
@@ -27,12 +34,6 @@ if __name__ == "__main__":
     process(get_project)
 ```
 
-Next we need to add `get_project` function.
-```python
-def get_project(name:str) -> 'core.ProjectBase':
-    cfg = core.ConfigBase()
-    return core.ProjectBase('debug','target-file', cfg)
-```
 `name` can be used to identify projects. This example uses base classes, but for more convenient using there are addons like `c.py` and they must provide its own classes (example: `c.Project`,`c.Config` from `c.py`)
 
 run:
