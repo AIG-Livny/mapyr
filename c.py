@@ -112,6 +112,8 @@ class Config(ConfigBase):
 
     def extend(self, other:'Config'):
         self.INCLUDE_DIRS.extend(other.get_abs_val(other.INCLUDE_DIRS))
+        self.LIBS.extend(other.LIBS)
+        self.LIB_DIRS.extend(other.get_abs_val(other.LIB_DIRS))
 
 class Project(ProjectBase):
     def __init__(self,
@@ -185,7 +187,9 @@ def vscode_make_cpp_properties(rule:Rule,cfg:'Config'):
 def build_object(rule:Rule) -> int:
     app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(rule.target)}")
 
-    os.makedirs(os.path.dirname(rule.target),exist_ok=True)
+    dirn = os.path.dirname(rule.target)
+    if dirn:
+        os.makedirs(dirn,exist_ok=True)
 
     cfg : Config = rule.parent.private_config
 
@@ -208,14 +212,16 @@ def build_object(rule:Rule) -> int:
 def link_executable(rule:Rule) -> int:
     app_logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(rule.target)}")
 
-    os.makedirs(os.path.dirname(rule.target),exist_ok=True)
+    dirn = os.path.dirname(rule.target)
+    if dirn:
+        os.makedirs(dirn,exist_ok=True)
 
     cfg : Config = rule.parent.private_config
 
     cmd = [cfg.COMPILER] \
     + cfg.LINK_FLAGS \
     + [f"-L{x}" for x in cfg.LIB_DIRS] \
-    + [x.target for x in rule.prerequisites if not x.phony] \
+    + [x.target for x in rule.prerequisites if not x.phony and x.target.endswith('.o')] \
     + ['-o',rule.target] \
     + [f"-l{x}" for x in cfg.LIBS]
 
@@ -242,7 +248,7 @@ def link_static(rule:Rule) -> int:
     cmd = [cfg.AR] \
     + [''.join(cfg.AR_FLAGS)] \
     + [rule.target] \
-    + [x.target for x in rule.prerequisites if not x.phony]
+    + [x.target for x in rule.prerequisites if not x.phony and x.target.endswith('.o')]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
         vscode_make_cpp_properties(rule, cfg)
