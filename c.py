@@ -185,13 +185,15 @@ def vscode_make_cpp_properties(rule:Rule,cfg:'Config'):
         json.dump(main_config, f, indent=4)
 
 def build_object(rule:Rule) -> int:
-    app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(rule.target)}")
+    cfg : Config = rule.parent.private_config
+    target = cfg.get_abs_val(rule.target)
 
-    dirn = os.path.dirname(rule.target)
+    app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(target)}")
+
+    dirn = os.path.dirname(target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
 
-    cfg : Config = rule.parent.private_config
 
     cmd = \
         [cfg.COMPILER,'-MT','','-MMD','-MP','-MF',''] \
@@ -200,29 +202,30 @@ def build_object(rule:Rule) -> int:
         + [f"-I{x}" for x in cfg.INCLUDE_DIRS] \
         + ['-c','-o','','']
 
-    path_wo_ext     = os.path.splitext(rule.target)[0]
+    path_wo_ext     = os.path.splitext(target)[0]
     cmd[2]     = rule.prerequisites[0].target
     cmd[6]     = f"{path_wo_ext}.d"
-    cmd[-2]    = rule.target
+    cmd[-2]    = target
     cmd[-1]    = rule.prerequisites[0].target
     # mapyr special flags
     cmd.insert(7, f'-D__MAPYR__FILENAME__="{os.path.basename(rule.prerequisites[0].target)}"')
     return sh(cmd).returncode
 
 def link_executable(rule:Rule) -> int:
-    app_logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(rule.target)}")
+    cfg : Config = rule.parent.private_config
+    target = cfg.get_abs_val(rule.target)
 
-    dirn = os.path.dirname(rule.target)
+    app_logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(target)}")
+
+    dirn = os.path.dirname(target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
-
-    cfg : Config = rule.parent.private_config
 
     cmd = [cfg.COMPILER] \
     + cfg.LINK_FLAGS \
     + [f"-L{x}" for x in cfg.LIB_DIRS] \
     + [x.target for x in rule.prerequisites if not x.phony and x.target.endswith('.o')] \
-    + ['-o',rule.target] \
+    + ['-o',target] \
     + [f"-l{x}" for x in cfg.LIBS]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
@@ -237,17 +240,18 @@ def link_executable(rule:Rule) -> int:
     return sh(cmd).returncode
 
 def link_static(rule:Rule) -> int:
-    app_logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(rule.target)}")
+    cfg : Config = rule.parent.private_config
+    target = cfg.get_abs_val(rule.target)
 
-    dirn = os.path.dirname(rule.target)
+    app_logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(target)}")
+
+    dirn = os.path.dirname(target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
 
-    cfg : Config = rule.parent.private_config
-
     cmd = [cfg.AR] \
     + [''.join(cfg.AR_FLAGS)] \
-    + [rule.target] \
+    + [target] \
     + [x.target for x in rule.prerequisites if not x.phony and x.target.endswith('.o')]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
