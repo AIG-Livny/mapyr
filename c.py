@@ -233,7 +233,9 @@ def link_executable(rule:Rule) -> int:
 def link_static(rule:Rule) -> int:
     app_logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(rule.target)}")
 
-    os.makedirs(os.path.dirname(rule.target),exist_ok=True)
+    dirn = os.path.dirname(rule.target)
+    if dirn:
+        os.makedirs(dirn,exist_ok=True)
 
     cfg : Config = rule.parent.private_config
 
