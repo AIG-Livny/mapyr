@@ -374,7 +374,7 @@ def add_default_rules(project:ProjectBase) -> None:
         case '.a':
             if not project.public_config:
                 project.public_config = cfg
-            project.main_rule = Rule(cfg.parent.target, cfg.parent, object_rules, link_static, False)
+            project.main_rule = Rule(target_path, cfg.parent, object_rules, link_static, False)
             project.rules.append(project.main_rule)
 
             pub_cfg : Config = project.public_config
@@ -385,7 +385,7 @@ def add_default_rules(project:ProjectBase) -> None:
             raise NotImplementedError('The shared library rules maker not implemented yet')
 
         case '.exe'|'':
-            project.main_rule = Rule(cfg.parent.target, cfg.parent, object_rules, link_executable, False)
+            project.main_rule = Rule(target_path, cfg.parent, object_rules, link_executable, False)
             project.rules.append(project.main_rule)
             for sp in project.subprojects:
                 project.main_rule.prerequisites.append(sp.main_rule)
