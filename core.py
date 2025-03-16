@@ -309,7 +309,7 @@ class ProjectBase():
                 return
 
             if rule in stack:
-               raise Exceptions.CircularDetected()
+               raise Exceptions.CircularDetected(rule.target)
 
             stack.append(rule)
             for prq_rule in rule.prerequisites:
