@@ -2,6 +2,7 @@ from .core import *
 from .logger import app_logger, color_text
 
 import json
+import re
 
 class Config(ConfigBase):
     def __init__(self) -> None:
@@ -277,7 +278,6 @@ def add_rules_from_d_file(path:str,project:ProjectBase):
     # make list[str] = ["/dir/targtet:src1.c src2.c src3.c", ...]
     content = content.replace('\\\n','')
     content = content.replace('\n\n','\n')
-    content = content.replace('   ',' ')
     content = content.split('\n')
 
     for line in content:
@@ -287,8 +287,9 @@ def add_rules_from_d_file(path:str,project:ProjectBase):
         if len(spl) < 2:
             continue
 
-        target = spl[0]
-        prerequisites = [x for x in spl[1].strip().split(' ') if x != target] if spl[1] else []
+        target = spl[0].strip()
+        spl[1] = re.split(r'\s+',spl[1].strip()) if spl[1] else []
+        prerequisites = [x for x in spl[1] if x != target]
         rule = project.find_rule(target)
         if not rule:
             rule = Rule(target,project)
