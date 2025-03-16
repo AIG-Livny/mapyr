@@ -384,7 +384,7 @@ def add_default_rules(project:ProjectBase) -> None:
         case '.so','.dll':
             raise NotImplementedError('The shared library rules maker not implemented yet')
 
-        case '.exe'|'':
+        case '.elf'|'.exe'|'':
             project.main_rule = Rule(target_path, cfg.parent, object_rules, link_executable, False)
             project.rules.append(project.main_rule)
             for sp in project.subprojects:
