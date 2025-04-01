@@ -1,4 +1,4 @@
-# Mapyr v.0.8.0
+# Mapyr v.0.8.1
 
 Mapyr - is a small build system written in Python3, uses python as build file (no new languages) and inherits the Makefile rule system, extending and complementing it.
 
@@ -16,19 +16,11 @@ Example of `build.py`:
 ```python
 #!/usr/bin/env python
 
+from mapyr import *
+
 def get_project(name:str) -> 'ProjectBase':
     cfg = ConfigBase()
     return ProjectBase('debug','target-file', cfg)
-
-#-----------FOOTER-----------
-try:
-    from mapyr import *
-except:
-    import shutil, subprocess, os
-    path = f'{os.path.dirname(__file__)}/mapyr'
-    shutil.rmtree(path,ignore_errors=True)
-    if subprocess.run(['git','clone','https://github.com/AIG-Livny/mapyr.git',path]).returncode: exit()
-    from mapyr import *
 
 if __name__ == "__main__":
     process(get_project)

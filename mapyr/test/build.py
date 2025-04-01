@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from mapyr import *
+
 def get_config() -> 'ToolConfig':
     cfg = ToolConfig()
     cfg.MAX_THREADS_NUM = 1
@@ -28,20 +30,5 @@ def get_project(name:str) -> 'c.Project':
 
     return project
 
-#-----------FOOTER-----------
-# Disable footer in tests
-from mapyr import *
-'''
-#-----------FOOTER-----------
-try:
-    from mapyr import *
-except:
-    import shutil, subprocess, os
-    path = f'{os.path.dirname(__file__)}/mapyr'
-    shutil.rmtree(path,ignore_errors=True)
-    if subprocess.run(['git','clone','https://github.com/AIG-Livny/mapyr.git',path]).returncode: exit()
-    from mapyr import *
-
-'''
 if __name__ == "__main__":
     process(get_project,get_config)

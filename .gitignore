@@ -4,3 +4,6 @@ obj
 bin
 .vscode
 script_artefact.c
+/build
+/dist
+/*.egg-info
