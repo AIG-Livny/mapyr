@@ -8,9 +8,9 @@ import inspect
 import traceback
 import copy
 
-from .logger import app_logger,console_handler,color_text
+from .logger import logger,console_handler,color_text
 
-VERSION = '0.8.0'
+VERSION = '0.8.2'
 
 #----------------------CONFIG--------------------------
 
@@ -99,7 +99,7 @@ def sh(cmd:list[str] | str, output_capture : bool = False) -> subprocess.Complet
         encoding='utf-8',
         shell=False if type(cmd) is list else True
     )
-    app_logger.debug(f'{result}')
+    logger.debug(f'{result}')
     return result
 
 def silentremove(filename:str):
@@ -443,14 +443,14 @@ class ProjectBase():
                 if error:
                     break
         if error:
-            app_logger.error(f'{os.path.relpath(problem_rule.target, caller_cwd()) }: Error. Stopped.')
+            logger.error(f'{os.path.relpath(problem_rule.target, caller_cwd()) }: Error. Stopped.')
             return False
 
         if not any_builds:
-            app_logger.info('Nothing to build')
+            logger.info('Nothing to build')
             return True
 
-        app_logger.info(color_text(32,'Done'))
+        logger.info(color_text(32,'Done'))
         return True
 
 #----------------------END PROJECT---------------------
@@ -465,7 +465,7 @@ def process(get_project_fnc, get_config_fnc=None):
     console_handler.setLevel(CONFIG.VERBOSITY)
 
     if CONFIG.MINIMUM_REQUIRED_VERSION > VERSION:
-        app_logger.warning(f"Required version {CONFIG.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!")
+        logger.warning(f"Required version {CONFIG.MINIMUM_REQUIRED_VERSION} is higher than running {VERSION}!")
 
     project_name = 'main'
     target = 'build'
@@ -485,4 +485,4 @@ def process(get_project_fnc, get_config_fnc=None):
             raise Exceptions.RuleNotFound(target)
         project.build(rule)
     except Exception as e:
-        app_logger.error(traceback.format_exc())
+        logger.error(traceback.format_exc())

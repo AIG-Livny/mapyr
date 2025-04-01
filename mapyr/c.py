@@ -1,5 +1,5 @@
 from .core import *
-from .logger import app_logger, color_text
+from .logger import logger, color_text
 
 import json
 import re
@@ -112,6 +112,7 @@ class Config(ConfigBase):
             self.__dict__[k] = self.get_abs_val(self.__dict__[k])
 
     def extend(self, other:'Config'):
+        self.DEFINES.extend(other.DEFINES)
         self.INCLUDE_DIRS.extend(other.get_abs_val(other.INCLUDE_DIRS))
         self.LIBS.extend(other.LIBS)
         self.LIB_DIRS.extend(other.get_abs_val(other.LIB_DIRS))
@@ -189,7 +190,7 @@ def build_object(rule:Rule) -> int:
     cfg : Config = rule.parent.private_config
     target = cfg.get_abs_val(rule.target)
 
-    app_logger.info(f"{color_text(94,'Building')}: {os.path.relpath(target)}")
+    logger.info(f"{color_text(94,'Building')}: {os.path.relpath(target)}")
 
     dirn = os.path.dirname(target)
     if dirn:
@@ -216,7 +217,7 @@ def link_executable(rule:Rule) -> int:
     cfg : Config = rule.parent.private_config
     target = cfg.get_abs_val(rule.target)
 
-    app_logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(target)}")
+    logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(target)}")
 
     dirn = os.path.dirname(target)
     if dirn:
@@ -244,7 +245,7 @@ def link_static(rule:Rule) -> int:
     cfg : Config = rule.parent.private_config
     target = cfg.get_abs_val(rule.target)
 
-    app_logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(target)}")
+    logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(target)}")
 
     dirn = os.path.dirname(target)
     if dirn:
@@ -306,7 +307,7 @@ def gen_vscode_config(rule:Rule):
         Default vs code configs
     '''
     if os.path.exists('.vscode'):
-        app_logger.error('directory .vscode already exists')
+        logger.error('directory .vscode already exists')
         exit()
     os.makedirs('.vscode')
     launch = {"version":"0.2.0","configurations":[{"name":"app","type":"cppdbg","request":"launch","program":"main","args":[],"stopAtEntry":False,"cwd":"${workspaceFolder}","environment":[],"externalConsole":False,"MIMode":"gdb","preLaunchTask":"build","setupCommands":[{"text":"-enable-pretty-printing","ignoreFailures":True},{"text":"-gdb-set disassembly-flavor intel","ignoreFailures":True}]}]}
@@ -329,7 +330,7 @@ def pkg_config_search(packages:list[str],config:Config):
 
     out = sh(["pkg-config","--cflags","--libs"]+packages,True)
     if out.stderr:
-        app_logger.error(f'pkg_config_search :{out.stderr}')
+        logger.error(f'pkg_config_search :{out.stderr}')
         return
     out = out.stdout.replace('\n','')
     spl = out.split(' ')

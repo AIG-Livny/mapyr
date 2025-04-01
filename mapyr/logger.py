@@ -1,8 +1,6 @@
 import logging
 import os
 
-app_logger : logging.Logger = None
-
 # Color text Win/Lin
 if os.name == 'nt':
     def color_text(color,text):
@@ -22,21 +20,11 @@ class ConsoleFormatter(logging.Formatter):
             record.msg = color_text(31,record.message)
         return super().format(record)
 
-file_formatter = logging.Formatter('%(asctime)-15s|PID:%(process)-11s|%(levelname)-8s|%(filename)s:%(lineno)s| %(message)s')
-
-file_path = f"{os.path.dirname(os.path.realpath(__file__))}/debug.log"
-file_handler = logging.FileHandler(file_path,'w',encoding='utf8')
-file_handler.setFormatter(file_formatter)
-
 console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
+console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(ConsoleFormatter())
 
-rootlog = logging.getLogger()
-rootlog.addHandler(file_handler)
-
-app_logger = logging.getLogger('main')
-app_logger.propagate = False
-app_logger.setLevel(logging.DEBUG)
-app_logger.addHandler(file_handler)
-app_logger.addHandler(console_handler)
+logger = logging.getLogger('mapyr')
+logger.propagate = False
+logger.setLevel(logging.DEBUG)
+logger.addHandler(console_handler)

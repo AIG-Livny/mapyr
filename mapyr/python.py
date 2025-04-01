@@ -4,7 +4,7 @@ import mapyr.logger
 def run(rule:Rule) -> int:
     target_path = rule.prerequisites[0].target
 
-    app_logger.info(f"{color_text(35,'Script running')}: {target_path}")
+    logger.info(f"{color_text(35,'Script running')}: {target_path}")
 
     if not os.path.isabs(target_path):
         target_path = os.path.join(rule.parent.private_config.CWD, target_path)
