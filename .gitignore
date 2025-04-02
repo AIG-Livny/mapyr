@@ -7,3 +7,4 @@ script_artefact.c
 /build
 /dist
 /*.egg-info
+make_pypi.sh

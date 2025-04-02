@@ -10,7 +10,7 @@ import copy
 
 from .logger import logger,console_handler,color_text
 
-VERSION = '0.8.2'
+VERSION = '0.8.3'
 
 #----------------------CONFIG--------------------------
 

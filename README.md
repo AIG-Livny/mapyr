@@ -1,4 +1,4 @@
-# Mapyr v.0.8.2
+# Mapyr v.0.8.3
 
 Mapyr - is a small build system written in Python3, uses python as build file (no new languages) and inherits the Makefile rule system, extending and complementing it.
 
@@ -10,8 +10,7 @@ Advantages of Mapyr:
  - It can be used as is for any language. Language modules just for convenience.
 
 # Usage
-Mapyr starts with `build.py` file. Footer will clone the Mapyr repo if it no exists yet. The Mapyr repository is not expected to become part of your project, but `build.py`.
-
+Mapyr starts with `build.py` file.
 Example of `build.py`:
 ```python
 #!/usr/bin/env python

@@ -15,9 +15,9 @@ class ConsoleFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         if record.levelno >= logging.ERROR:
-            record.msg = color_text(91,record.message)
+            record.msg = color_text(91,record.msg)
         if record.levelno == logging.WARNING:
-            record.msg = color_text(31,record.message)
+            record.msg = color_text(31,record.msg)
         return super().format(record)
 
 console_handler = logging.StreamHandler()

@@ -8,7 +8,7 @@ def readme():
 
 setup(
   name='mapyr',
-  version='0.8.2',
+  version='0.8.3',
   author='AIG',
   author_email='aig.livny@gmail.com',
   description='Small build system',
