@@ -389,9 +389,10 @@ def add_default_rules(project:ProjectBase) -> None:
         case '.elf'|'.exe'|'':
             project.main_rule = Rule(target_path, cfg.parent, object_rules, link_executable, False)
             project.rules.append(project.main_rule)
-            for sp in project.subprojects:
-                project.main_rule.prerequisites.append(sp.main_rule)
-                project.private_config.extend(sp.public_config)
+
+    for sp in project.subprojects:
+        project.main_rule.prerequisites.append(sp.main_rule)
+        project.private_config.extend(sp.public_config)
 
     rule_build = Rule('build',project,[project.main_rule],phony=True)
     rule_clean = Rule('clean',project,exec=clean_project,phony=True)
