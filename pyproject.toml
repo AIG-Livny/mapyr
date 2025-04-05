@@ -1,0 +1,19 @@
+[project]
+name = "mapyr"
+version = "0.8.5"
+description = "Small build system"
+authors = [
+        {name = "AIG",email = "AIG.Livny@gmail.com"}
+]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/AIG-Livny/mapyr"
+repository = "https://github.com/AIG-Livny/mapyr"
+keywords = ["mapyr", "build", "makefile", "c++"]
+
+[tool.poetry]
+packages = [{include = "mapyr", from = "src"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

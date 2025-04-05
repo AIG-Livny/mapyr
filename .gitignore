@@ -4,7 +4,5 @@ obj
 bin
 .vscode
 script_artefact.c
-/build
+poetry.lock
 /dist
-/*.egg-info
-make_pypi.sh

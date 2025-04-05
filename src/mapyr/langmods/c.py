@@ -1,10 +1,13 @@
-from .core import *
-from .logger import logger, color_text
+from ..core import *
+from ..logger import logger
+from ..utils import *
 
 import json
 import re
 
 class Config(ConfigBase):
+    dir_members = ['TARGET_PATH','SRC_DIRS','OBJ_PATH','INCLUDE_DIRS','LIB_DIRS','SOURCES']
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -73,6 +76,8 @@ class Config(ConfigBase):
             Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
         '''
 
+        self.dir_members = Config.dir_members
+
     def get_build_string(self) -> str:
         '''
             Config string need to sign config of built files
@@ -87,35 +92,11 @@ class Config(ConfigBase):
         ]
         return str(lst)
 
-    def get_abs_val(self, val:str|list[str]):
-        if type(val) == str:
-            if not os.path.isabs(val):
-                val = os.path.join(self.CWD,val)
-            return val
-        elif type(val) == list:
-            result = []
-            for v in val:
-                if not os.path.isabs(v):
-                    v = os.path.join(self.CWD,v)
-                result.append(v)
-            return result
-        else:
-            raise ValueError()
-
-    def make_abs(self):
-        '''
-            Make absolute paths
-        '''
-        for k in self.__dict__.keys():
-            if k not in ['TARGET_PATH','SRC_DIRS','OBJ_PATH','INCLUDE_DIRS','LIB_DIRS','SOURCES']:
-                continue
-            self.__dict__[k] = self.get_abs_val(self.__dict__[k])
-
     def extend(self, other:'Config'):
         self.DEFINES.extend(other.DEFINES)
-        self.INCLUDE_DIRS.extend(other.get_abs_val(other.INCLUDE_DIRS))
+        self.INCLUDE_DIRS.extend(other.INCLUDE_DIRS)
         self.LIBS.extend(other.LIBS)
-        self.LIB_DIRS.extend(other.get_abs_val(other.LIB_DIRS))
+        self.LIB_DIRS.extend(other.LIB_DIRS)
 
 class Project(ProjectBase):
     def __init__(self,
@@ -131,8 +112,6 @@ class Project(ProjectBase):
         self.private_config     : Config
         self.protected_config   : Config
         self.public_config      : Config
-
-        self.delete_objects_if_config_different()
 
     def delete_objects_if_config_different(self):
         '''
@@ -153,11 +132,21 @@ class Project(ProjectBase):
 
     def build(self, rule:Rule):
         # Before build, make all configs absolute path
-        def _set_absolute_config_paths(project:ProjectBase, parent_project:ProjectBase):
+        def _set_absolute_config_paths(project:ProjectBase):
             if type(project) is Project:
                 project.private_config.make_abs()
+                if project.protected_config:
+                    project.protected_config.make_abs()
+                if project.public_config:
+                    project.public_config.make_abs()
 
+            return 0
+
+        def _check_config(project:ProjectBase):
+            project.delete_objects_if_config_different()
+            return 0
         self.project_recursive_run(_set_absolute_config_paths)
+        self.project_recursive_run(_check_config)
 
         return super().build(rule)
 
@@ -188,14 +177,12 @@ def vscode_make_cpp_properties(rule:Rule,cfg:'Config'):
 
 def build_object(rule:Rule) -> int:
     cfg : Config = rule.parent.private_config
-    target = cfg.get_abs_val(rule.target)
 
-    logger.info(f"{color_text(94,'Building')}: {os.path.relpath(target)}")
+    logger.info(f"{color_text(94,'Building')}: {os.path.relpath(rule.target)}")
 
-    dirn = os.path.dirname(target)
+    dirn = os.path.dirname(rule.target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
-
 
     cmd = \
         [cfg.COMPILER,'-MT','','-MMD','-MP','-MF',''] \
@@ -204,10 +191,10 @@ def build_object(rule:Rule) -> int:
         + [f"-I{x}" for x in cfg.INCLUDE_DIRS] \
         + ['-c','-o','','']
 
-    path_wo_ext     = os.path.splitext(target)[0]
+    path_wo_ext     = os.path.splitext(rule.target)[0]
     cmd[2]     = rule.prerequisites[0].target
     cmd[6]     = f"{path_wo_ext}.d"
-    cmd[-2]    = target
+    cmd[-2]    = rule.target
     cmd[-1]    = rule.prerequisites[0].target
     # mapyr special flags
     cmd.insert(7, f'-D__MAPYR__FILENAME__="{os.path.basename(rule.prerequisites[0].target)}"')
@@ -215,11 +202,10 @@ def build_object(rule:Rule) -> int:
 
 def link_executable(rule:Rule) -> int:
     cfg : Config = rule.parent.private_config
-    target = cfg.get_abs_val(rule.target)
 
-    logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(target)}")
+    logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(rule.target)}")
 
-    dirn = os.path.dirname(target)
+    dirn = os.path.dirname(rule.target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
 
@@ -227,7 +213,7 @@ def link_executable(rule:Rule) -> int:
     + cfg.LINK_FLAGS \
     + [f"-L{x}" for x in cfg.LIB_DIRS] \
     + [x.target for x in rule.prerequisites if not x.phony and x.target.endswith('.o')] \
-    + ['-o',target] \
+    + ['-o',rule.target] \
     + [f"-l{x}" for x in cfg.LIBS]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
@@ -243,17 +229,16 @@ def link_executable(rule:Rule) -> int:
 
 def link_static(rule:Rule) -> int:
     cfg : Config = rule.parent.private_config
-    target = cfg.get_abs_val(rule.target)
 
-    logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(target)}")
+    logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(rule.target)}")
 
-    dirn = os.path.dirname(target)
+    dirn = os.path.dirname(rule.target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
 
     cmd = [cfg.AR] \
     + [''.join(cfg.AR_FLAGS)] \
-    + [target] \
+    + [rule.target] \
     + [x.target for x in rule.prerequisites if not x.phony and x.target.endswith('.o')]
 
     if cfg.VSCODE_CPPTOOLS_CONFIG:
@@ -391,6 +376,7 @@ def add_default_rules(project:ProjectBase) -> None:
             project.rules.append(project.main_rule)
 
     for sp in project.subprojects:
+        sp.public_config.make_abs()
         project.main_rule.prerequisites.append(sp.main_rule)
         project.private_config.extend(sp.public_config)
 

@@ -1,6 +1,20 @@
 #!/usr/bin/env python
 
+# Import local mapyr, not global
+import os
+import sys
+sys.path.insert(0,f"{os.path.dirname(__file__)}/..")
+
+
+import logging
 from mapyr import *
+
+# Enable logging
+fh = logging.FileHandler('debug.log',"w+")
+fh.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
 
 def get_config() -> 'ToolConfig':
     cfg = ToolConfig()
