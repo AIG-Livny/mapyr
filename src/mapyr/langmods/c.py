@@ -10,6 +10,7 @@ class Config(ConfigBase):
 
     def __init__(self) -> None:
         super().__init__()
+        self.dir_members = Config.dir_members
 
         self.SRC_DIRS : list[str] = ['src']
         '''
@@ -76,7 +77,6 @@ class Config(ConfigBase):
             Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
         '''
 
-        self.dir_members = Config.dir_members
 
     def get_build_string(self) -> str:
         '''
@@ -92,11 +92,12 @@ class Config(ConfigBase):
         ]
         return str(lst)
 
-    def extend(self, other:'Config'):
-        self.DEFINES.extend(other.DEFINES)
-        self.INCLUDE_DIRS.extend(other.INCLUDE_DIRS)
-        self.LIBS.extend(other.LIBS)
-        self.LIB_DIRS.extend(other.LIB_DIRS)
+    def extend(self, other:'Config', members : list[str] = None):
+        if not members:
+            members = ['DEFINES','INCLUDE_DIRS','LIBS','LIB_DIRS']
+
+        for member in members:
+            getattr(self, member).extend(getattr(other, member))
 
 class Project(ProjectBase):
     def __init__(self,

@@ -7,7 +7,7 @@ import mapyr.utils as utils
 from mapyr.exceptions import Exceptions
 from mapyr.logger import logger,console_handler
 
-VERSION = '0.8.5'
+VERSION = '0.8.6'
 
 #----------------------CONFIG--------------------------
 
@@ -100,9 +100,10 @@ class ConfigBase:
 
         self.parent : ProjectBase = None
 
-    def extend(self, other:'ConfigBase'):
+    def extend(self, other:'ConfigBase', members : list[str] = None):
         '''
             Must be implemented in children
+            members : list of config member names, that will be extended
         '''
         raise NotImplementedError()
 
@@ -124,7 +125,7 @@ class ConfigBase:
         else:
             raise ValueError()
 
-    def make_abs(self) -> 'Config':
+    def make_abs(self) -> 'ConfigBase':
         '''
             Make absolute paths
         '''
