@@ -7,7 +7,7 @@ import mapyr.utils as utils
 from mapyr.exceptions import Exceptions
 from mapyr.logger import logger,console_handler
 
-VERSION = '0.8.6'
+VERSION = '0.8.7'
 
 #----------------------CONFIG--------------------------
 

@@ -336,7 +336,7 @@ def add_default_rules(project:ProjectBase) -> None:
     target_path = cfg.parent.target if os.path.isabs(cfg.parent.target) else os.path.join(cfg.CWD,cfg.parent.target)
 
     # Sources
-    cfg.SOURCES = cfg.get_abs_val(cfg.SOURCES) + find_files(cfg.SRC_DIRS,['.c','.cc','.cpp'],cfg.CWD)
+    cfg.SOURCES = cfg.get_abs_val(cfg.SOURCES) + find_files(cfg.SRC_DIRS, ['.c','.cc','.cpp'], cwd=cfg.CWD)
     cfg.SOURCES = unify_list(cfg.SOURCES)
 
     objects = [os.path.join(cfg.CWD,'obj',os.path.relpath(os.path.splitext(x)[0],cfg.CWD).replace('../','updir/'))+'.o' for x in cfg.SOURCES]

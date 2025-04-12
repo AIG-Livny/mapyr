@@ -1,6 +1,6 @@
 [project]
 name = "mapyr"
-version = "0.8.6"
+version = "0.8.7"
 description = "Small build system"
 authors = [
         {name = "AIG",email = "AIG.Livny@gmail.com"}
