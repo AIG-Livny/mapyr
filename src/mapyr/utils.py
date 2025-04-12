@@ -69,8 +69,7 @@ def sh(cmd: str | list[str], shell=False) -> CompletedProcess:
     output = child.read()
     child.close(force=False)
     logger.debug(output)
-    if child.exitstatus:
-        print(output,end="")
+    print(output,end="")
     return CompletedProcess(cmd,child.exitstatus,output)
 
 def silentremove(filename:str):
