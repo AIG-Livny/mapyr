@@ -302,11 +302,12 @@ def gen_vscode_config(rule:Rule):
         json.dump(launch, flaunch, indent=4)
         json.dump(tasks, ftasks, indent=4)
 
-def clean_project(rule:Rule) -> int:
-    silentremove(rule.parent.private_config.OBJ_PATH)
+def clean(rule:Rule) -> int:
+    def _clean(_prj : Project):
+        silentremove(_prj.private_config.OBJ_PATH)
+        return 0
 
-    for sp in rule.parent.subprojects:
-        silentremove(sp.private_config.OBJ_PATH)
+    rule.parent.project_recursive_run(_clean)
     return 0
 
 def pkg_config_search(packages:list[str],config:Config):
@@ -382,7 +383,7 @@ def add_default_rules(project:ProjectBase) -> None:
         project.private_config.extend(sp.public_config)
 
     rule_build = Rule('build',project,[project.main_rule],phony=True)
-    rule_clean = Rule('clean',project,exec=clean_project,phony=True)
+    rule_clean = Rule('clean',project,exec=clean,phony=True)
 
     project.rules.append(rule_build)
     project.rules.append(rule_clean)

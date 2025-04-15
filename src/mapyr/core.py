@@ -7,7 +7,7 @@ import mapyr.utils as utils
 from mapyr.exceptions import Exceptions
 from mapyr.logger import logger,console_handler
 
-VERSION = '0.8.7'
+VERSION = '0.8.8'
 
 #----------------------CONFIG--------------------------
 
@@ -72,6 +72,10 @@ class Rule:
         '''
             Parent project
         '''
+
+        if not self.phony:
+            if not os.path.isabs(self.target):
+                self.target = f'{self.parent.private_config.CWD}/{self.target}'
 
     def __str__(self) -> str:
         return f'{self.target}:{self.prerequisites}'
@@ -258,16 +262,16 @@ class ProjectBase():
                 else:
                     return 0
 
-            if not _rule.exec:
-                return 0
-
             if not os.path.isabs(_rule.target):
                 _rule.target = f'{_rule.parent.private_config.CWD}/{_rule.target}'
 
             # Target doesn't exists
             if not os.path.exists(_rule.target):
-                bulilded_rules.append(_rule)
-                return _rule.exec(_rule)
+                if _rule.exec:
+                    bulilded_rules.append(_rule)
+                    return _rule.exec(_rule)
+                else:
+                    return 0
 
             # Prerequisite is newer
             out_date = os.path.getmtime(_rule.target)
@@ -280,7 +284,12 @@ class ProjectBase():
                 src_date = os.path.getmtime(prq.target)
                 if src_date > out_date:
                     bulilded_rules.append(_rule)
-                    return _rule.exec(_rule)
+                    if _rule.exec:
+                        return _rule.exec(_rule)
+                    else:
+                        # Not buildable targets cannot be updated naturally
+                        # so update them artificially to avoid endless rebuilds
+                        os.utime(_rule.target)
 
             return 0
         try:

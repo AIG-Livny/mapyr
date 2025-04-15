@@ -20,3 +20,10 @@ logger = logging.getLogger('mapyr')
 logger.propagate = False
 logger.setLevel(logging.DEBUG)
 logger.addHandler(console_handler)
+
+def enable_log_file(path:str):
+    fh = logging.FileHandler(path,"w+")
+    fh.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s %(thread)s [%(levelname)s] %(message)s')
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
