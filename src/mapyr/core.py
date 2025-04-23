@@ -8,7 +8,7 @@ from mapyr.exceptions import Exceptions
 from mapyr.logger import logger,console_handler
 import threading
 
-VERSION = '0.8.9'
+VERSION = '0.8.10'
 
 #----------------------CONFIG--------------------------
 
@@ -211,27 +211,29 @@ class ProjectBase():
 
         visited = set()
         stack = []
-        mutex = threading.Lock()
+        mutex_stack = threading.Lock()
+        mutex_visited = threading.Lock()
 
         def process_node(_node : Rule):
-            if _node in visited:
-                return 0
+            with mutex_visited:
+                if _node in visited:
+                    return 0
+                visited.add(_node)
 
             result = 0
             children = getattr(_node, children_container_name)
             if children:
-                with mutex:
+                with mutex_stack:
                     if _node in stack:
                         raise Exceptions.CircularDetected(_node)
                     stack.append(_node)
 
                 result = process_subtree(_node)
 
-                with mutex:
+                with mutex_stack:
                     stack.remove(_node)
 
             result = max(result, function(_node))
-            visited.add(_node)
             return result
 
         def process_subtree(_node):
