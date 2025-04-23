@@ -6,8 +6,9 @@ import copy
 import mapyr.utils as utils
 from mapyr.exceptions import Exceptions
 from mapyr.logger import logger,console_handler
+import threading
 
-VERSION = '0.8.8'
+VERSION = '0.8.9'
 
 #----------------------CONFIG--------------------------
 
@@ -208,26 +209,29 @@ class ProjectBase():
         cc = os.cpu_count()
         threads_num = cc if CONFIG.MAX_THREADS_NUM > cc else CONFIG.MAX_THREADS_NUM
 
-        visited = []
+        visited = set()
         stack = []
+        mutex = threading.Lock()
 
         def process_node(_node : Rule):
-            if _node in stack:
-                raise Exceptions.CircularDetected(_node)
-
             if _node in visited:
                 return 0
-
-            stack.append(_node)
 
             result = 0
             children = getattr(_node, children_container_name)
             if children:
+                with mutex:
+                    if _node in stack:
+                        raise Exceptions.CircularDetected(_node)
+                    stack.append(_node)
+
                 result = process_subtree(_node)
 
+                with mutex:
+                    stack.remove(_node)
+
             result = max(result, function(_node))
-            visited.append(_node)
-            stack.pop()
+            visited.add(_node)
             return result
 
         def process_subtree(_node):
