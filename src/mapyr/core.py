@@ -8,7 +8,7 @@ from mapyr.exceptions import Exceptions
 from mapyr.logger import logger,console_handler
 import threading
 
-VERSION = '0.8.10'
+VERSION = '0.8.11'
 
 #----------------------CONFIG--------------------------
 
@@ -258,9 +258,9 @@ class ProjectBase():
     def project_recursive_run(self, function):
         return self.recursive_run(self, function, 'subprojects')
 
-    def build(self, rule : Rule):
+    def build(self, rule : Rule) -> int:
         bulilded_rules = []
-        def _build(_rule : Rule):
+        def _build(_rule : Rule) -> int:
 
             if _rule.phony:
                 if _rule.exec:
@@ -299,11 +299,15 @@ class ProjectBase():
 
             return 0
         try:
-            self.rule_recursive_run(rule, _build)
-            if bulilded_rules:
-                logger.info(utils.color_text(32,'Done'))
+            code = self.rule_recursive_run(rule, _build)
+            if code != 0:
+                logger.error('Error has occurred')
             else:
-                logger.info('Nothing to build')
+                if bulilded_rules:
+                    logger.info(utils.color_text(32,'Done'))
+                else:
+                    logger.info('Nothing to build')
+            return code
         except Exception as e:
             logger.error(f'{e}')
 
@@ -337,6 +341,8 @@ def process(get_project_fnc, get_config_fnc=None):
         rule = project.find_rule(target)
         if not rule:
             raise Exceptions.RuleNotFound(target)
-        project.build(rule)
+        code = project.build(rule)
+        exit(code)
     except Exception as e:
         logger.error(traceback.format_exc())
+        exit(1)
