@@ -3,12 +3,13 @@ import os
 import concurrent.futures
 import traceback
 import copy
+import threading
+import json
 import mapyr.utils as utils
 from mapyr.exceptions import Exceptions
 from mapyr.logger import logger,console_handler
-import threading
 
-VERSION = '0.8.11'
+VERSION = '0.9.0'
 
 #----------------------CONFIG--------------------------
 
@@ -61,7 +62,7 @@ class Rule:
 
         self.exec : function = exec
         '''
-            Execution function
+            Execution function: def my_exec_func(rule:Rule) -> CompileCommand | None
         '''
 
         self.phony : bool = phony
@@ -140,6 +141,45 @@ class ConfigBase:
             self.__dict__[k] = self.get_abs_val(self.__dict__[k])
         return self
 
+class CompileCommand:
+    def __init__(self):
+        self.directory : str = None
+        '''
+            The working directory of the compilation
+        '''
+
+        self.file : str = None
+        '''
+            The main translation unit source processed by this compilation step.
+        '''
+
+        self.arguments : list[str] = None
+        '''
+            The compile command argv as list of strings.
+        '''
+
+        self.command : str = None
+        '''
+            The compile command as a single shell-escaped string.
+            Either arguments or command is required.
+            arguments is preferred,
+        '''
+
+        self.output : str = None
+        '''
+            The name of the output created by this compilation step.
+        '''
+
+        self._name : str = 'Unnamed'
+
+
+    def get_dict(self):
+        filtered = {k: v for k, v in self.__dict__.items() if v is not None and not k.startswith('_')}
+        return filtered
+
+    def __str__(self) -> str:
+        return json.dumps(self.get_dict())
+
 #----------------------PROJECT-------------------------
 
 class ProjectBase():
@@ -159,6 +199,7 @@ class ProjectBase():
         self.main_rule : Rule = None
         self.rules : list[Rule] = []
         self.subprojects : list['ProjectBase'] = subprojects if subprojects else []
+        self.source_names_hash = 0
 
         self.private_config     : ConfigBase = None
         self.public_config      : ConfigBase = None
@@ -195,7 +236,7 @@ class ProjectBase():
                 return rule
         return None
 
-    def recursive_run(self, start_node, function, children_container_name) -> int:
+    def recursive_run(self, start_node, function, children_container_name, stop_criteria = None):
         '''
             Deep first multithreaded recursive function run
             Any type of nodes support
@@ -203,8 +244,7 @@ class ProjectBase():
             start_node : Rule | Project | ... - node as root of tree
             function : function(node : Rule | Project | ... ) - function will be executed for all nodes
             children_container_name : str - name of class member contains children nodes
-
-            return : int - exitcode
+            stop_criteria : function(return_value:Any) -> bool - if true, stops tree walking
         '''
         cc = os.cpu_count()
         threads_num = cc if CONFIG.MAX_THREADS_NUM > cc else CONFIG.MAX_THREADS_NUM
@@ -217,10 +257,9 @@ class ProjectBase():
         def process_node(_node : Rule):
             with mutex_visited:
                 if _node in visited:
-                    return 0
+                    return
                 visited.add(_node)
 
-            result = 0
             children = getattr(_node, children_container_name)
             if children:
                 with mutex_stack:
@@ -228,56 +267,72 @@ class ProjectBase():
                         raise Exceptions.CircularDetected(_node)
                     stack.append(_node)
 
-                result = process_subtree(_node)
+                process_subtree(_node)
 
                 with mutex_stack:
                     stack.remove(_node)
 
-            result = max(result, function(_node))
-            return result
+            return function(_node)
 
         def process_subtree(_node):
             with concurrent.futures.ThreadPoolExecutor(max_workers=threads_num) as executor:
                 children = getattr(_node, children_container_name)
                 futures = [executor.submit(process_node, child) for child in children]
-                max_return_code = 0
                 for future in concurrent.futures.as_completed(futures):
-                    return_code = future.result()
-                    max_return_code = max(max_return_code, return_code)
-                    if max_return_code != 0:
-                        for f in futures:
-                            f.cancel()
-                        break
-                return max_return_code
+                    if stop_criteria:
+                        if stop_criteria(future.result()):
+                            for f in futures:
+                                f.cancel()
+                            break
 
-        return process_node(start_node)
+        process_node(start_node)
 
-    def rule_recursive_run(self, rule : Rule, function):
-        return self.recursive_run(rule, function, 'prerequisites')
+    def rule_recursive_run(self, rule : Rule, function, stop_criteria = None):
+        return self.recursive_run(rule, function, 'prerequisites', stop_criteria)
 
-    def project_recursive_run(self, function):
-        return self.recursive_run(self, function, 'subprojects')
+    def project_recursive_run(self, function, stop_criteria = None):
+        return self.recursive_run(self, function, 'subprojects', stop_criteria)
 
     def build(self, rule : Rule) -> int:
         bulilded_rules = []
+
+        def _exec_rule(_rule : Rule) -> int:
+            if _rule.exec:
+                compile_command : CompileCommand = _rule.exec(_rule)
+                if compile_command:
+                    if compile_command._name:
+                        logger.info(f"{compile_command._name}: {os.path.relpath(compile_command.output)}")
+
+                    if compile_command.arguments:
+                        return utils.sh(compile_command.arguments,cwd=compile_command.directory).returncode
+                    elif compile_command.command:
+                        return utils.sh(compile_command.command,cwd=compile_command.directory).returncode
+                    else:
+                        return 0
+            return 0
+
+        mutex_hash = threading.Lock()
+
         def _build(_rule : Rule) -> int:
 
             if _rule.phony:
-                if _rule.exec:
-                    return _rule.exec(_rule)
-                else:
-                    return 0
+                return _exec_rule(_rule)
+
+            # Hash source names calculation
+            hash_sum = 0
+            for prq in _rule.prerequisites:
+                hash_sum = utils.stable_hash(prq.target)
+            hash_sum + utils.stable_hash(_rule.target)
+
+            with mutex_hash:
+                _rule.parent.source_names_hash += hash_sum
 
             if not os.path.isabs(_rule.target):
                 _rule.target = f'{_rule.parent.private_config.CWD}/{_rule.target}'
 
             # Target doesn't exists
             if not os.path.exists(_rule.target):
-                if _rule.exec:
-                    bulilded_rules.append(_rule)
-                    return _rule.exec(_rule)
-                else:
-                    return 0
+                return _exec_rule(_rule)
 
             # Prerequisite is newer
             out_date = os.path.getmtime(_rule.target)
@@ -291,15 +346,24 @@ class ProjectBase():
                 if src_date > out_date:
                     bulilded_rules.append(_rule)
                     if _rule.exec:
-                        return _rule.exec(_rule)
+                        return _exec_rule(_rule)
                     else:
                         # Not buildable targets cannot be updated naturally
                         # so update them artificially to avoid endless rebuilds
                         os.utime(_rule.target)
 
             return 0
+
+        code = 0
+        def _stop_criteria(value) -> bool:
+            nonlocal code
+            if value != 0:
+                code = value
+                return True
+            return False
+
         try:
-            code = self.rule_recursive_run(rule, _build)
+            self.rule_recursive_run(rule, _build, _stop_criteria)
             if code != 0:
                 logger.error('Error has occurred')
             else:
@@ -307,9 +371,29 @@ class ProjectBase():
                     logger.info(utils.color_text(32,'Done'))
                 else:
                     logger.info('Nothing to build')
-            return code
         except Exception as e:
             logger.error(f'{e}')
+
+        return code
+
+    def get_compile_commands(self) -> list[dict]:
+        result = []
+
+        mutex = threading.Lock()
+
+        def _compile_commands(_rule : Rule):
+            if _rule.phony:
+                return
+
+            if _rule.exec:
+                compile_command : CompileCommand = _rule.exec(_rule)
+                if compile_command:
+                    if compile_command.command or compile_command.arguments:
+                        with mutex:
+                            result.append(compile_command.get_dict())
+
+        self.rule_recursive_run(self.main_rule, _compile_commands)
+        return result
 
 #----------------------END PROJECT---------------------
 

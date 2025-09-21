@@ -72,12 +72,6 @@ class Config(ConfigBase):
             List of source files
         '''
 
-        self.VSCODE_CPPTOOLS_CONFIG : bool = False
-        '''
-            Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
-        '''
-
-
     def get_build_string(self) -> str:
         '''
             Config string need to sign config of built files
@@ -146,16 +140,45 @@ class Project(ProjectBase):
         def _check_config(project:ProjectBase):
             project.delete_objects_if_config_different()
             return 0
+
+
         self.project_recursive_run(_set_absolute_config_paths)
         self.project_recursive_run(_check_config)
 
-        return super().build(rule)
+        code = super().build(rule)
 
-def vscode_make_cpp_properties(rule:Rule,cfg:'Config'):
+        # Making compile commands
+        if code == 0:
+            if os.path.isabs(self.private_config.OBJ_PATH):
+                ap = self.private_config.OBJ_PATH
+            else:
+                ap = os.path.join(self.private_config.CWD, self.private_config.OBJ_PATH)
+            source_names_hash_file = os.path.join(ap,'source_names_hash')
+            compile_commands_file = os.path.join(self.private_config.CWD, 'compile_commands.json')
+
+            write_compile_commands = False
+            if not os.path.exists(compile_commands_file) or not os.path.exists(source_names_hash_file):
+                write_compile_commands = True
+            else:
+                with open(source_names_hash_file, 'r') as f:
+                    if int(f.read()) != self.source_names_hash:
+                        write_compile_commands = True
+
+            if write_compile_commands:
+                with open(compile_commands_file,'w+') as f:
+                    json.dump(self.get_compile_commands(),f)
+
+            with open(source_names_hash_file, 'w+') as f:
+                f.write(str(self.source_names_hash))
+        return code
+
+def vscode_make_cpp_properties(project:ProjectBase):
     '''
         For visual studio code, С/С++ extension.
     '''
-    vscode_file_path = f'{rule._cwd}/.vscode/c_cpp_properties.json'
+    cfg : Config = project.private_config
+
+    vscode_file_path = f'{cfg.CWD}/.vscode/c_cpp_properties.json'
     if os.path.exists(vscode_file_path):
         import inspect
         build_py_filename = inspect.stack()[2].filename
@@ -163,7 +186,7 @@ def vscode_make_cpp_properties(rule:Rule,cfg:'Config'):
             return
 
     config = {
-        'name':os.path.basename(rule.target),
+        'name':project.name,
         'includePath':cfg.INCLUDE_DIRS,
         'defines':cfg.DEFINES
     }
@@ -176,16 +199,20 @@ def vscode_make_cpp_properties(rule:Rule,cfg:'Config'):
     with open(vscode_file_path, 'w+') as f:
         json.dump(main_config, f, indent=4)
 
-def build_object(rule:Rule) -> int:
+def build_object(rule:Rule) -> CompileCommand:
     cfg : Config = rule.parent.private_config
-
-    logger.info(f"{color_text(94,'Building')}: {os.path.relpath(rule.target)}")
 
     dirn = os.path.dirname(rule.target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
 
-    cmd = \
+    compile_command = CompileCommand()
+    compile_command._name = color_text(94,'Building')
+    compile_command.file = rule.prerequisites[0].target
+    compile_command.directory = cfg.CWD
+    compile_command.output = rule.target
+
+    compile_command.arguments = \
         [cfg.COMPILER,'-MT','','-MMD','-MP','-MF',''] \
         + cfg.CFLAGS \
         + [f"-D{x}" for x in cfg.DEFINES] \
@@ -193,57 +220,58 @@ def build_object(rule:Rule) -> int:
         + ['-c','-o','','']
 
     path_wo_ext     = os.path.splitext(rule.target)[0]
-    cmd[2]     = rule.prerequisites[0].target
-    cmd[6]     = f"{path_wo_ext}.d"
-    cmd[-2]    = rule.target
-    cmd[-1]    = rule.prerequisites[0].target
+    compile_command.arguments[2]    = rule.prerequisites[0].target
+    compile_command.arguments[6]    = f"{path_wo_ext}.d"
+    compile_command.arguments[-2]   = rule.target
+    compile_command.arguments[-1]   = rule.prerequisites[0].target
     # mapyr special flags
-    cmd.insert(7, f'-D__MAPYR__FILENAME__="{os.path.basename(rule.prerequisites[0].target)}"')
-    return sh(cmd).returncode
+    compile_command.arguments.insert(7, f'-D__MAPYR__FILENAME__="{os.path.basename(rule.prerequisites[0].target)}"')
 
-def link_executable(rule:Rule) -> int:
+    return compile_command
+
+def link_executable(rule:Rule) -> CompileCommand:
     cfg : Config = rule.parent.private_config
-
-    logger.info(f"{color_text(32,'Linking executable')}: {os.path.relpath(rule.target)}")
 
     dirn = os.path.dirname(rule.target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
 
-    cmd = [cfg.COMPILER] \
+    compile_command = CompileCommand()
+    compile_command._name = color_text(32,'Linking executable')
+    compile_command.directory = cfg.CWD
+    compile_command.output = rule.target
+
+    compile_command.arguments = [cfg.COMPILER] \
     + cfg.LINK_FLAGS \
     + [f"-L{x}" for x in cfg.LIB_DIRS] \
     + [x.target for x in rule.prerequisites if not x.phony and x.target.endswith('.o')] \
     + ['-o',rule.target] \
     + [f"-l{x}" for x in cfg.LIBS]
 
-    if cfg.VSCODE_CPPTOOLS_CONFIG:
-        vscode_make_cpp_properties(rule, cfg)
-
     abs_dir_obj=os.path.join(cfg.CWD, cfg.OBJ_PATH)
     if not os.path.exists(abs_dir_obj):
         os.makedirs(abs_dir_obj,exist_ok=True)
     with open(os.path.join(abs_dir_obj,'config_tag'),'w+') as f:
         f.write(cfg.get_build_string())
 
-    return sh(cmd).returncode
+    return compile_command
 
-def link_static(rule:Rule) -> int:
+def link_static(rule:Rule) -> CompileCommand:
     cfg : Config = rule.parent.private_config
-
-    logger.info(f"{color_text(33,'Linking static')}: {os.path.relpath(rule.target)}")
 
     dirn = os.path.dirname(rule.target)
     if dirn:
         os.makedirs(dirn,exist_ok=True)
 
-    cmd = [cfg.AR] \
+    compile_command = CompileCommand()
+    compile_command._name = color_text(33,'Linking static')
+    compile_command.directory = cfg.CWD
+    compile_command.output = rule.target
+
+    compile_command.arguments = [cfg.AR] \
     + [''.join(cfg.AR_FLAGS)] \
     + [rule.target] \
     + [x.target for x in rule.prerequisites if not x.phony and x.target.endswith('.o')]
-
-    if cfg.VSCODE_CPPTOOLS_CONFIG:
-        vscode_make_cpp_properties(rule, cfg)
 
     abs_dir_obj=os.path.join(cfg.CWD, cfg.OBJ_PATH)
     if not os.path.exists(abs_dir_obj):
@@ -251,7 +279,7 @@ def link_static(rule:Rule) -> int:
     with open(os.path.join(abs_dir_obj,'config_tag'),'w+') as f:
         f.write(cfg.get_build_string())
 
-    return sh(cmd).returncode
+    return compile_command
 
 def add_rules_from_d_file(path:str,project:ProjectBase):
     if not os.path.isabs(path):
@@ -302,13 +330,11 @@ def gen_vscode_config(rule:Rule):
         json.dump(launch, flaunch, indent=4)
         json.dump(tasks, ftasks, indent=4)
 
-def clean(rule:Rule) -> int:
+def clean(rule:Rule):
     def _clean(_prj : Project):
         silentremove(_prj.private_config.OBJ_PATH)
-        return 0
 
     rule.parent.project_recursive_run(_clean)
-    return 0
 
 def pkg_config_search(packages:list[str],config:Config):
     '''

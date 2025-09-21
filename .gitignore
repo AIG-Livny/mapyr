@@ -6,3 +6,4 @@ bin
 script_artefact.c
 poetry.lock
 /dist
+compile_commands.json

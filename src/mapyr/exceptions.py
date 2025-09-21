@@ -10,3 +10,5 @@ class Exceptions:
         "Prerequisite not found!"
     class AtLeastOneConfig(CustomException):
         "At least one config must be present"
+    class CommandOrArguments(CustomException):
+        "Command or argument must be present"

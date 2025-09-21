@@ -4,6 +4,7 @@ import pexpect
 import shutil
 import importlib
 import inspect
+import hashlib
 from mapyr.logger import logger
 
 
@@ -50,7 +51,7 @@ class CompletedProcess:
         self.returncode = exitstatus
         self.output = output
 
-def sh(cmd: str | list[str], shell=False) -> CompletedProcess:
+def sh(cmd: str | list[str], shell=False, cwd=None) -> CompletedProcess:
     logger.debug(cmd)
 
     program : str = cmd
@@ -65,7 +66,7 @@ def sh(cmd: str | list[str], shell=False) -> CompletedProcess:
        program = f"sh -c '{program} {' '.join(args)}'"
        args = []
 
-    child = pexpect.spawn(program,args,encoding='UTF-8',codec_errors='replace')
+    child = pexpect.spawn(program,args,encoding='UTF-8',codec_errors='replace', cwd=cwd)
     output = child.read()
     child.close(force=False)
     logger.debug(output)
@@ -136,3 +137,8 @@ def caller_cwd() -> str:
         if not path.startswith(os.path.dirname(__file__)):
             return os.path.dirname(os.path.abspath(path))
     raise RuntimeError('frame not found')
+
+def stable_hash(value:str) -> int:
+    hasher = hashlib.sha256()
+    hasher.update(value.encode('utf-8'))
+    return int.from_bytes(hasher.digest(), byteorder='big')
