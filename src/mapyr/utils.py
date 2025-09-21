@@ -5,7 +5,7 @@ import shutil
 import importlib
 import inspect
 import hashlib
-from mapyr.logger import logger
+from mapyr.logs import logger
 
 
 # Color text Win/Lin

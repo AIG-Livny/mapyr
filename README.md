@@ -1,4 +1,4 @@
-# Mapyr v.0.9.0
+# Mapyr v.0.9.1
 
 Mapyr is a small build system written in Python 3.  It uses Python for build files (no new languages required) and inherits the Makefile rule system, extending and complementing it.
 

@@ -1,5 +1,5 @@
 from ..core import *
-from ..logger import logger
+from ..logs import logger
 from ..utils import *
 
 import json
@@ -70,6 +70,16 @@ class Config(ConfigBase):
         self.SOURCES : list[str] = []
         '''
             List of source files
+        '''
+
+        self.VSCODE_CPPTOOLS_CONFIG : bool = False
+        '''
+            Generate C/C++ Tools for Visual Studio Code config (c_cpp_properties.json)
+        '''
+
+        self.COMPILE_COMMANDS : bool = False
+        '''
+            Generate compile_commands.json
         '''
 
     def get_build_string(self) -> str:
@@ -148,7 +158,7 @@ class Project(ProjectBase):
         code = super().build(rule)
 
         # Making compile commands
-        if code == 0:
+        if self.private_config.COMPILE_COMMANDS and code == 0:
             if os.path.isabs(self.private_config.OBJ_PATH):
                 ap = self.private_config.OBJ_PATH
             else:
@@ -170,6 +180,10 @@ class Project(ProjectBase):
 
             with open(source_names_hash_file, 'w+') as f:
                 f.write(str(self.source_names_hash))
+
+        if self.private_config.VSCODE_CPPTOOLS_CONFIG:
+            vscode_make_cpp_properties(self)
+
         return code
 
 def vscode_make_cpp_properties(project:ProjectBase):
@@ -184,6 +198,8 @@ def vscode_make_cpp_properties(project:ProjectBase):
         build_py_filename = inspect.stack()[2].filename
         if os.path.getmtime(build_py_filename) <= os.path.getmtime(vscode_file_path):
             return
+    else:
+        os.makedirs(os.path.dirname(vscode_file_path), exist_ok=True)
 
     config = {
         'name':project.name,

@@ -29,6 +29,7 @@ def get_project(name:str) -> 'c.Project':
     # Create config and inject artificial dependency on generated file
     config = c.Config()
     config.SOURCES = ['src/script_artefact.c']
+    config.VSCODE_CPPTOOLS_CONFIG = True
 
     # Create project and make default rules
     project = c.Project('release','bin/main',config,subprojects=[lib.lib1.build.get_project()])

@@ -7,9 +7,9 @@ import threading
 import json
 import mapyr.utils as utils
 from mapyr.exceptions import Exceptions
-from mapyr.logger import logger,console_handler
+from mapyr.logs import logger,console_handler
 
-VERSION = '0.9.0'
+VERSION = '0.9.1'
 
 #----------------------CONFIG--------------------------
 
@@ -257,7 +257,7 @@ class ProjectBase():
         def process_node(_node : Rule):
             with mutex_visited:
                 if _node in visited:
-                    return
+                    return 0
                 visited.add(_node)
 
             children = getattr(_node, children_container_name)
